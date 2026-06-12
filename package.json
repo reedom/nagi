@@ -1,0 +1,27 @@
+{
+  "name": "nagi",
+  "version": "0.1.0",
+  "description": "AI Concierge - a Slack-driven dispatcher for ai-workflow-engine",
+  "type": "module",
+  "bin": {
+    "nagi": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "dev": "tsx src/index.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@slack/bolt": "^4.2.0",
+    "ai-workflow-engine": "file:../ai-workflow-engine",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.7.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}

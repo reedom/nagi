@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  launchd agent for nagi. Crash recovery is fail-fast + KeepAlive (eng review
+  6A): if the process exits for any reason, launchd restarts a clean one. The
+  in-memory queue is lost on restart; that is accepted and documented for v1.
+
+  Install:
+    cp deploy/com.reedom.nagi.plist ~/Library/LaunchAgents/
+    launchctl load ~/Library/LaunchAgents/com.reedom.nagi.plist
+
+  Edit the absolute paths and the Slack tokens below before loading. Keep this
+  file readable only by you (it holds tokens): chmod 600.
+-->
+<plist version="1.0">
+  <dict>
+    <key>Label</key>
+    <string>com.reedom.nagi</string>
+
+    <key>ProgramArguments</key>
+    <array>
+      <string>/usr/local/bin/node</string>
+      <string>/Users/you/src/nagi/dist/index.js</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/you/src/nagi</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+      <key>SLACK_BOT_TOKEN</key>
+      <string>xoxb-REPLACE-ME</string>
+      <key>SLACK_APP_TOKEN</key>
+      <string>xapp-REPLACE-ME</string>
+      <key>NAGI_CONFIG</key>
+      <string>/Users/you/src/nagi/nagi.config.json</string>
+      <key>PATH</key>
+      <string>/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin</string>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/Users/you/src/nagi/nagi.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/you/src/nagi/nagi.err.log</string>
+  </dict>
+</plist>

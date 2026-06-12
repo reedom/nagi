@@ -1,0 +1,18 @@
+{
+  "slack": {
+    "allowedTeamId": "T0123456789",
+    "allowedUserIds": ["U0123456789"]
+  },
+  "repos": {
+    "engine": "/Users/you/src/ai-workflow-engine",
+    "web": "/Users/you/src/web"
+  },
+  "triage": {
+    "model": "claude-sonnet-4-6",
+    "confidenceThreshold": 0.6,
+    "timeoutMs": 60000,
+    "tokenCap": 2000
+  },
+  "defaultBudget": 200000,
+  "auditLogPath": "./audit.jsonl"
+}

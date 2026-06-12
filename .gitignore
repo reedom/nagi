@@ -1,0 +1,8 @@
+node_modules/
+dist/
+*.log
+.env
+.envrc
+nagi.config.json
+.omc/
+audit.jsonl

@@ -1,0 +1,193 @@
+import { runWorkflow, type CliAdapter, type WorkflowModule } from 'ai-workflow-engine';
+import type { RunOptions } from 'ai-workflow-engine';
+import type { NagiConfig } from '../config.js';
+import type { Registry } from '../registry/index.js';
+import type { AuditLog } from '../audit.js';
+import type { Logger } from '../logger.js';
+import type { RequestContext, ThreadReplier } from '../types.js';
+import type { ThreadStore } from '../thread-state.js';
+import { checkAuth, REFUSAL_MESSAGE } from '../auth/allowlist.js';
+import { runTriage, type TriageDeps } from '../triage/triage.js';
+import { ApprovalRegistry } from '../escalation/approval-registry.js';
+import { makeSlackApprovalChannel, type ApprovalGate } from '../escalation/slack-channel.js';
+import { WorkQueue } from './queue.js';
+import { decide } from './decide.js';
+import { parseControl, type ControlCommand } from './control.js';
+import { errorMessage, formatResult, formatStatus, shortLabel } from './format.js';
+
+type RunWorkflowFn = (mod: WorkflowModule, opts: RunOptions) => Promise<unknown>;
+
+export interface DispatcherDeps {
+  config: NagiConfig;
+  registry: Registry;
+  triage: TriageDeps;
+  adapters: { claude: CliAdapter; codex: CliAdapter };
+  audit: AuditLog;
+  queue: WorkQueue;
+  threadStore: ThreadStore;
+  approvals: ApprovalRegistry;
+  log: Logger;
+  makeReplier: (req: RequestContext) => ThreadReplier;
+  makeGate: (req: RequestContext) => ApprovalGate;
+  newRunId: () => string;
+  newApprovalId: () => string;
+  /** Kills the active run's process tree; returns how many processes were signalled. */
+  cancelActiveRun: () => number;
+  /** Injectable for tests; defaults to the engine's runWorkflow. */
+  runWorkflowFn?: RunWorkflowFn;
+}
+
+export class Dispatcher {
+  private cancelling = false;
+  private readonly runWorkflowFn: RunWorkflowFn;
+
+  constructor(private readonly deps: DispatcherDeps) {
+    this.runWorkflowFn = deps.runWorkflowFn ?? runWorkflow;
+  }
+
+  /** Entry point for every inbound Slack message. Never throws. */
+  async handle(req: RequestContext): Promise<void> {
+    const replier = this.deps.makeReplier(req);
+    const auth = checkAuth(this.deps.config, req);
+    if (!auth.allowed) {
+      await this.safeSay(replier, REFUSAL_MESSAGE);
+      this.record(req, 'refused', auth.reason ? { detail: auth.reason } : {});
+      return;
+    }
+
+    const control = parseControl(req.text);
+    if (control) {
+      await this.handleControl(control, req, replier);
+      return;
+    }
+
+    const pending = this.deps.threadStore.get(req.threadTs);
+    const text = pending ? `${pending.originalText}\n\n[follow-up] ${req.text}` : req.text;
+    if (pending) this.deps.threadStore.delete(req.threadTs);
+
+    const admission = this.deps.queue.enqueue({
+      label: shortLabel(req.text),
+      run: () => this.process(req, text, replier),
+    });
+    if (!admission.accepted) {
+      await this.safeSay(
+        replier,
+        `I'm busy with “${admission.busyWith}”. Queued your request (position ${admission.position}); ` +
+          `I'll run it when the current one finishes.`,
+      );
+    }
+  }
+
+  private async handleControl(
+    command: ControlCommand,
+    req: RequestContext,
+    replier: ThreadReplier,
+  ): Promise<void> {
+    if (command === 'status') {
+      await this.safeSay(replier, formatStatus(this.deps.queue.status()));
+      this.record(req, 'control', { detail: 'status' });
+      return;
+    }
+    this.cancelling = true;
+    const killed = this.deps.cancelActiveRun();
+    const dropped = this.deps.queue.clearPending();
+    await this.safeSay(
+      replier,
+      `Cancelling: signalled ${killed} process(es) and dropped ${dropped} queued request(s).`,
+    );
+    this.record(req, 'cancelled', { detail: `killed=${killed} dropped=${dropped}` });
+  }
+
+  private async process(req: RequestContext, text: string, replier: ThreadReplier): Promise<void> {
+    this.cancelling = false;
+    let triageResult;
+    try {
+      triageResult = await runTriage(this.deps.triage, text);
+    } catch (err) {
+      await this.safeSay(replier, `:warning: I couldn't triage that: ${errorMessage(err)}`);
+      this.record(req, 'failed', { detail: `triage: ${errorMessage(err)}` });
+      return;
+    }
+
+    const decision = decide(this.deps.config, this.deps.registry, triageResult);
+    if (decision.kind === 'clarify') {
+      this.deps.threadStore.set(req.threadTs, { originalText: text, question: decision.question });
+      await this.safeSay(replier, decision.question);
+      this.record(req, 'clarification', {
+        workflowId: triageResult.workflowId,
+        args: triageResult.args,
+        detail: decision.question,
+      });
+      return;
+    }
+
+    await this.safeSay(
+      replier,
+      `On it — running *${decision.entry.id}* with \`${JSON.stringify(decision.args)}\`.`,
+    );
+    this.record(req, 'dispatched', { workflowId: decision.entry.id, args: decision.args });
+    await this.runDispatched(req, replier, decision);
+  }
+
+  private async runDispatched(
+    req: RequestContext,
+    replier: ThreadReplier,
+    decision: Extract<ReturnType<typeof decide>, { kind: 'dispatch' }>,
+  ): Promise<void> {
+    const runId = this.deps.newRunId();
+    let approvals = 0;
+    const channel = makeSlackApprovalChannel({
+      gate: this.deps.makeGate(req),
+      registry: this.deps.approvals,
+      newId: this.deps.newApprovalId,
+      onResolved: () => {
+        approvals += 1;
+      },
+    });
+    const options: RunOptions = {
+      adapters: { claude: this.deps.adapters.claude, codex: this.deps.adapters.codex },
+      args: decision.args,
+      budget: decision.budget,
+      ...(decision.cwd ? { cwd: decision.cwd } : {}),
+      escalation: { channel, runId, defaultPolicy: { onTimeout: 'wait' } },
+      onLog: (m) => this.deps.log.info(`[wf:${runId}] ${m}`),
+    };
+    try {
+      const result = await this.runWorkflowFn(decision.entry.module, options);
+      await this.safeSay(replier, formatResult(result));
+      this.record(req, 'completed', { workflowId: decision.entry.id, args: decision.args, approvals });
+    } catch (err) {
+      const cancelled = this.cancelling;
+      const prefix = cancelled ? ':octagonal_sign: Run cancelled' : ':warning: Run failed';
+      await this.safeSay(replier, `${prefix}: ${errorMessage(err)}`);
+      this.record(req, cancelled ? 'cancelled' : 'failed', {
+        workflowId: decision.entry.id,
+        args: decision.args,
+        approvals,
+        detail: errorMessage(err),
+      });
+    }
+  }
+
+  private record(
+    req: RequestContext,
+    outcome: Parameters<AuditLog['record']>[0]['outcome'],
+    extra: Partial<Parameters<AuditLog['record']>[0]> = {},
+  ): void {
+    this.deps.audit.record({
+      teamId: req.teamId,
+      userId: req.userId,
+      text: req.text,
+      outcome,
+      ...extra,
+    });
+  }
+
+  private async safeSay(replier: ThreadReplier, text: string): Promise<void> {
+    try {
+      await replier.say(text);
+    } catch (err) {
+      this.deps.log.error('failed to post to Slack', { error: errorMessage(err) });
+    }
+  }
+}
