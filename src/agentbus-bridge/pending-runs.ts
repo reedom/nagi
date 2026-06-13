@@ -15,6 +15,7 @@ interface Entry extends RunBinding {
   resolve: (text: string) => void;
   reject: (reason: Error) => void;
   cancelTimer: () => void;
+  promise: Promise<{ text: string }>;
 }
 
 function bindingOf(e: Entry): RunBinding {
@@ -29,18 +30,29 @@ export class PendingRuns {
 
   await(runId: string, binding: RunBinding, deps: { schedule?: Schedule } = {}): Promise<{ text: string }> {
     const schedule = deps.schedule ?? defaultSchedule;
-    return new Promise<{ text: string }>((resolve, reject) => {
+    const promise = new Promise<{ text: string }>((resolve, reject) => {
       const cancelTimer = schedule(() => {
         this.map.delete(runId);
         reject(new Error('surfaced run exceeded its wait ceiling'));
       }, binding.ceilingMs);
-      this.map.set(runId, {
+      const entry: Entry = {
         ...binding,
         resolve: (text) => resolve({ text }),
         reject,
         cancelTimer,
-      });
+        promise: undefined as unknown as Promise<{ text: string }>,
+      };
+      this.map.set(runId, entry);
     });
+    const e = this.map.get(runId);
+    if (e) e.promise = promise;
+    return promise;
+  }
+
+  awaitExisting(runId: string): Promise<{ text: string }> {
+    const e = this.map.get(runId);
+    if (!e) return Promise.reject(new Error(`no pending run ${runId}`));
+    return e.promise;
   }
 
   get(runId: string): RunBinding | undefined {

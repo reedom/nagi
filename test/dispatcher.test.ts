@@ -5,6 +5,7 @@ import { WorkQueue } from '../src/dispatcher/queue.js';
 import { makeRegistry } from '../src/registry/index.js';
 import { makeThreadStore } from '../src/thread-state.js';
 import { ApprovalRegistry } from '../src/escalation/approval-registry.js';
+import { PendingRuns } from '../src/agentbus-bridge/pending-runs.js';
 import { repoAliases } from '../src/config.js';
 import type { RequestContext } from '../src/types.js';
 import {
@@ -48,6 +49,10 @@ function harness(triageData: Array<Record<string, unknown>>, runWorkflowFn?: Run
     newRunId: () => 'run',
     newApprovalId: () => 'appr',
     cancelActiveRun,
+    pending: new PendingRuns(),
+    makeSurfaceAdapter: () => adapter,
+    surfaceCeilingMs: 1000,
+    closeSurface: async () => {},
     ...(runWorkflowFn ? { runWorkflowFn } : {}),
   });
   return { dispatcher, replier, audit, queue, threadStore, adapter, cancelActiveRun, registry };

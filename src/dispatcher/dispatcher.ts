@@ -9,6 +9,7 @@ import type { ThreadStore } from '../thread-state.js';
 import { checkAuth, REFUSAL_MESSAGE } from '../auth/allowlist.js';
 import { runTriage, type TriageDeps } from '../triage/triage.js';
 import { ApprovalRegistry } from '../escalation/approval-registry.js';
+import type { PendingRuns } from '../agentbus-bridge/pending-runs.js';
 import { makeSlackApprovalChannel, type ApprovalGate } from '../escalation/slack-channel.js';
 import { WorkQueue } from './queue.js';
 import { decide } from './decide.js';
@@ -33,6 +34,13 @@ export interface DispatcherDeps {
   newApprovalId: () => string;
   /** Kills the active run's process tree; returns how many processes were signalled. */
   cancelActiveRun: () => number;
+  pending: PendingRuns;
+  /** Builds a per-run cmux adapter bound to runId + the pending registry. */
+  makeSurfaceAdapter: (runId: string) => CliAdapter;
+  /** Wall-clock ceiling for a surfaced run (ms). */
+  surfaceCeilingMs: number;
+  /** Closes a surface by ref (cmux close-surface); best-effort. */
+  closeSurface: (surfaceRef: string) => Promise<void>;
   /** Injectable for tests; defaults to the engine's runWorkflow. */
   runWorkflowFn?: RunWorkflowFn;
 }
@@ -126,6 +134,10 @@ export class Dispatcher {
       `On it — running *${decision.entry.id}* with \`${JSON.stringify(decision.args)}\`.`,
     );
     this.record(req, 'dispatched', { workflowId: decision.entry.id, args: decision.args });
+    if (decision.entry.surfaced) {
+      this.launchSurfaced(req, replier, decision);
+      return; // queue slot frees immediately; the bridge drives completion
+    }
     await this.runDispatched(req, replier, decision);
   }
 
@@ -167,6 +179,45 @@ export class Dispatcher {
         detail: errorMessage(err),
       });
     }
+  }
+
+  private launchSurfaced(
+    req: RequestContext,
+    replier: ThreadReplier,
+    decision: Extract<ReturnType<typeof decide>, { kind: 'dispatch' }>,
+  ): void {
+    const runId = this.deps.newRunId();
+    const adapter = this.deps.makeSurfaceAdapter(runId);
+    const awaited = this.deps.pending.await(runId, {
+      channel: req.channel,
+      threadTs: req.threadTs,
+      ceilingMs: this.deps.surfaceCeilingMs,
+    });
+    const options: RunOptions = {
+      adapters: { cmux: adapter },
+      args: decision.args,
+      budget: decision.budget,
+      ...(decision.cwd ? { cwd: decision.cwd } : {}),
+      onLog: (m) => this.deps.log.info(`[surface:${runId}] ${m}`),
+    };
+    // Fire concurrently; do NOT await (the queue job returns now).
+    void this.runWorkflowFn(decision.entry.module, options)
+      .then(async (result) => {
+        await this.safeSay(replier, formatResult(result));
+        this.record(req, 'completed', { workflowId: decision.entry.id, args: decision.args });
+      })
+      .catch(async (err) => {
+        const cancelled = /cancelled/.test(errorMessage(err));
+        const prefix = cancelled ? ':octagonal_sign: Surface run cancelled' : ':warning: Surface run failed';
+        await this.safeSay(replier, `${prefix}: ${errorMessage(err)}`);
+        this.record(req, cancelled ? 'cancelled' : 'failed', {
+          workflowId: decision.entry.id,
+          args: decision.args,
+          detail: errorMessage(err),
+        });
+      });
+    // Keep `awaited` referenced so the adapter's awaitResult resolves via the same registry entry.
+    void awaited.catch(() => {});
   }
 
   private record(

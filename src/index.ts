@@ -5,6 +5,7 @@ import { makeAuditLog } from './audit.js';
 import { makeRegistry } from './registry/index.js';
 import { makeThreadStore } from './thread-state.js';
 import { ApprovalRegistry } from './escalation/approval-registry.js';
+import { PendingRuns } from './agentbus-bridge/pending-runs.js';
 import { WorkQueue } from './dispatcher/queue.js';
 import { killActiveRunDescendants } from './dispatcher/kill-tree.js';
 import { Dispatcher } from './dispatcher/dispatcher.js';
@@ -14,6 +15,7 @@ import { newId } from './util/id.js';
 import { loadDotenv } from './util/env.js';
 
 const SWEEP_INTERVAL_MS = 5 * 60 * 1000;
+const SURFACE_CEILING_MS = 30 * 60 * 1000;
 
 async function main(): Promise<void> {
   loadDotenv(); // populate process.env from .env before reading secrets/config
@@ -27,6 +29,7 @@ async function main(): Promise<void> {
   const queue = new WorkQueue(logger);
   const threadStore = makeThreadStore();
   const approvals = new ApprovalRegistry();
+  const pending = new PendingRuns();
 
   // The claude adapter gets full Bash; the codex adapter runs full-access too —
   // both match the trusted same-machine model the engine targets. The allowlist
@@ -52,6 +55,14 @@ async function main(): Promise<void> {
     newRunId: () => newId('run'),
     newApprovalId: () => newId('appr'),
     cancelActiveRun: () => killActiveRunDescendants(logger),
+    pending,
+    // TODO(B7): wire the real cmux surface adapter + host + agentbus bridge.
+    // Until then a surfaced dispatch fails loudly rather than running headless.
+    makeSurfaceAdapter: () => {
+      throw new Error('surfaced runs are not wired yet (pending B7 cmux integration)');
+    },
+    surfaceCeilingMs: SURFACE_CEILING_MS,
+    closeSurface: async () => {}, // TODO(B7): cmux close-surface; used by surface-aware stop (B6).
   });
 
   const bot = createSlackBot({

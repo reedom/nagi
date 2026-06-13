@@ -29,4 +29,17 @@ describe('PendingRuns', () => {
     expect(p.cancelAll()).toBe(2);
     expect(p.active()).toEqual([]);
   });
+  it('awaitExisting returns the same result promise that resolveResult settles', async () => {
+    const p = new PendingRuns();
+    const never = { schedule: (_f: () => void, _m: number) => () => {} };
+    const a = p.await('x', { channel: 'C', threadTs: '1', ceilingMs: 1000 }, never);
+    const b = p.awaitExisting('x');
+    p.resolveResult('x', 'yo');
+    await expect(a).resolves.toEqual({ text: 'yo' });
+    await expect(b).resolves.toEqual({ text: 'yo' });
+  });
+  it('awaitExisting rejects for an unknown run', async () => {
+    const p = new PendingRuns();
+    await expect(p.awaitExisting('nope')).rejects.toThrow(/no pending run/);
+  });
 });
