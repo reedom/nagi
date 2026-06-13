@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "@slack/bolt": "^4.2.0",
+    "agent-surface-adapters": "file:../agent-surface-adapters",
     "ai-workflow-engine": "file:../ai-workflow-engine",
     "zod": "^3.24.1"
   },
