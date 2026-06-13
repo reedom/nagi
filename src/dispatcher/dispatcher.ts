@@ -99,11 +99,21 @@ export class Dispatcher {
     this.cancelling = true;
     const killed = this.deps.cancelActiveRun();
     const dropped = this.deps.queue.clearPending();
+    const surfaced = this.deps.pending.active();
+    for (const runId of surfaced) {
+      const binding = this.deps.pending.cancel(runId); // rejects awaitResult -> the run reports cancelled in its thread
+      if (binding?.surfaceRef) {
+        void this.deps.closeSurface(binding.surfaceRef).catch((e) =>
+          this.deps.log.warn('close-surface failed', { runId, error: errorMessage(e) }),
+        );
+      }
+    }
     await this.safeSay(
       replier,
-      `Cancelling: signalled ${killed} process(es) and dropped ${dropped} queued request(s).`,
+      `Cancelling: signalled ${killed} process(es), dropped ${dropped} queued request(s), ` +
+        `and cancelled ${surfaced.length} surface run(s).`,
     );
-    this.record(req, 'cancelled', { detail: `killed=${killed} dropped=${dropped}` });
+    this.record(req, 'cancelled', { detail: `killed=${killed} dropped=${dropped} surfaced=${surfaced.length}` });
   }
 
   private async process(req: RequestContext, text: string, replier: ThreadReplier): Promise<void> {

@@ -81,4 +81,17 @@ describe('surfaced dispatch', () => {
     expect(h.replier.said.some((s) => /the answer/.test(s))).toBe(true);
     expect(h.audit.entries.at(-1)?.outcome).toBe('completed');
   });
+
+  it('stop cancels active surfaced runs and closes their surfaces', async () => {
+    const h = surfaceHarness();
+    await h.dispatcher.handle(req());
+    for (let i = 0; i < 10; i += 1) await tick();
+    const runId = h.pending.active()[0]!;
+    h.pending.setSurfaceRef(runId, 'workspace:2');
+    await h.dispatcher.handle(req({ text: 'cancel' }));
+    for (let i = 0; i < 10; i += 1) await tick();
+    expect(h.closeSurface).toHaveBeenCalledWith('workspace:2');
+    expect(h.pending.active()).toEqual([]);
+    expect(h.replier.said.some((s) => /cancel/i.test(s))).toBe(true);
+  });
 });
