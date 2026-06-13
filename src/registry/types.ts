@@ -13,6 +13,8 @@ export interface RegistryEntry {
   module: WorkflowModule;
   /** Per-entry token budget override; falls back to config.defaultBudget (3A). */
   budgetOverride?: number | null;
+  /** Dispatched on the concurrent surfaced lane (bypasses the single-flight queue). */
+  surfaced?: boolean;
 }
 
 /**

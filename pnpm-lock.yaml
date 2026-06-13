@@ -11,6 +11,9 @@ importers:
       '@slack/bolt':
         specifier: ^4.2.0
         version: 4.7.3(@types/express@5.0.6)
+      agent-surface-adapters:
+        specifier: file:../agent-surface-adapters
+        version: file:../agent-surface-adapters
       ai-workflow-engine:
         specifier: file:../ai-workflow-engine
         version: file:../ai-workflow-engine
@@ -562,6 +565,9 @@ packages:
   agent-base@6.0.2:
     resolution: {integrity: sha512-RZNwNclF7+MS/8bDg70amg32dyeZGZxiDuQmZxKLAlQjr3jGyLx+4Kkk58UO7D2QdgFIQCovuSuZESne6RG6XQ==}
     engines: {node: '>= 6.0.0'}
+
+  agent-surface-adapters@file:../agent-surface-adapters:
+    resolution: {directory: ../agent-surface-adapters, type: directory}
 
   ai-workflow-engine@file:../ai-workflow-engine:
     resolution: {directory: ../ai-workflow-engine, type: directory}
@@ -1554,6 +1560,10 @@ snapshots:
       debug: 4.4.3
     transitivePeerDependencies:
       - supports-color
+
+  agent-surface-adapters@file:../agent-surface-adapters:
+    dependencies:
+      ai-workflow-engine: file:../ai-workflow-engine
 
   ai-workflow-engine@file:../ai-workflow-engine: {}
 

@@ -26,6 +26,9 @@ export const triageCases: TriageCase[] = [
   { name: 'compare jobs', input: 'compare approaches to background job processing', expect: { workflowId: 'research' } },
   { name: 'best practices', input: 'what are the current best practices for socket-mode slack bots?', expect: { workflowId: 'research' } },
 
+  // surface dispatches
+  { name: 'surface engine', input: 'open a surface and run auth review on engine', expect: { workflowId: 'surface' } },
+
   // clarification triggers
   { name: 'vague do', input: 'do the thing', expect: { clarify: true } },
   { name: 'help', input: 'help', expect: { clarify: true } },
