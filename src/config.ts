@@ -26,6 +26,14 @@ const configSchema = z.object({
   // Repo references are a configured alias map; free-form paths are
   // unrepresentable in workflow arg schemas (D13).
   repos: z.record(z.string().min(1), z.string().refine(isAbsolute, 'repo path must be absolute')),
+  // Optional cmux access for the surfaced lane; absent → surfaced runs are disabled.
+  cmux: z
+    .object({
+      socketPath: z.string().min(1).optional(),
+      password: z.string().min(1).optional(),
+      window: z.string().min(1).optional(),
+    })
+    .optional(),
   triage: triageSchema.default({}),
   // Default per-request token budget; entries may override (3A). null = unbounded.
   defaultBudget: z.number().int().positive().nullable().default(null),
