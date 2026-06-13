@@ -51,4 +51,18 @@ describe('handleEnvelope', () => {
     await handleEnvelope({ id: 'm', kind: 'message', from: 'x', payload: { type: 'progress', runId: 'ghost', text: 'x' } }, d.base);
     expect(d.poster.postMessage).not.toHaveBeenCalled();
   });
+
+  it('keeps two concurrent runs isolated (no thread crossing)', async () => {
+    const d = deps();
+    void d.pending.await('rA', { channel: 'CA', threadTs: 'TA', ceilingMs: 1000 }, never).catch(() => {});
+    const awaitedB = d.pending.await('rB', { channel: 'CB', threadTs: 'TB', ceilingMs: 1000 }, never);
+    await handleEnvelope({ id: 'm1', kind: 'message', from: 'ext:awe-rA', payload: { type: 'progress', runId: 'rA', text: 'A-step' } }, d.base);
+    await handleEnvelope({ id: 'm2', kind: 'message', from: 'ext:awe-rB', payload: { type: 'progress', runId: 'rB', text: 'B-step' } }, d.base);
+    expect(d.poster.postMessage).toHaveBeenCalledWith(expect.objectContaining({ channel: 'CA', thread_ts: 'TA', text: expect.stringContaining('A-step') }));
+    expect(d.poster.postMessage).toHaveBeenCalledWith(expect.objectContaining({ channel: 'CB', thread_ts: 'TB', text: expect.stringContaining('B-step') }));
+    // resolving rB must not resolve or disturb rA
+    await handleEnvelope({ id: 'm3', kind: 'message', from: 'ext:awe-rB', payload: { type: 'result', runId: 'rB', text: 'B-done' } }, d.base);
+    await expect(awaitedB).resolves.toEqual({ text: 'B-done' });
+    expect(d.pending.active()).toEqual(['rA']);
+  });
 });

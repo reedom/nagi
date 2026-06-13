@@ -48,6 +48,9 @@ async function main(): Promise<void> {
       nagiInstance: NAGI_INSTANCE,
       newRunId: () => runId,
       awaitResult: () => pending.awaitExisting(runId),
+      onSurface: (surface) => {
+        if (surface.ref) pending.setSurfaceRef(runId, surface.ref);
+      },
       ...(config.cmux?.socketPath ? { cmuxSocketPath: config.cmux.socketPath } : {}),
       ...(config.cmux?.password ? { cmuxPassword: config.cmux.password } : {}),
       ...(config.cmux?.window ? { cmuxWindow: config.cmux.window } : {}),

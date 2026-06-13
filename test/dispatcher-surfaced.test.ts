@@ -29,6 +29,7 @@ function surfaceHarness() {
     id: 'cmux',
     caps: { schema: false, resume: false, tools: true },
     async run(): Promise<AgentResult> {
+      pending.setSurfaceRef(runId, `workspace:${runId}`); // mimic the real onSurface -> setSurfaceRef wiring
       const r = await pending.awaitExisting(runId);
       return { text: r.text, raw: {}, usage: { inputTokens: 0, outputTokens: 0 } };
     },
@@ -87,10 +88,10 @@ describe('surfaced dispatch', () => {
     await h.dispatcher.handle(req());
     for (let i = 0; i < 10; i += 1) await tick();
     const runId = h.pending.active()[0]!;
-    h.pending.setSurfaceRef(runId, 'workspace:2');
+    // surfaceRef was set by the adapter via the onSurface path, NOT injected by the test
     await h.dispatcher.handle(req({ text: 'cancel' }));
     for (let i = 0; i < 10; i += 1) await tick();
-    expect(h.closeSurface).toHaveBeenCalledWith('workspace:2');
+    expect(h.closeSurface).toHaveBeenCalledWith(`workspace:${runId}`);
     expect(h.pending.active()).toEqual([]);
     expect(h.replier.said.some((s) => /cancel/i.test(s))).toBe(true);
   });
