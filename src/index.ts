@@ -1,4 +1,5 @@
 import { makeClaudeAdapter, makeCodexAdapter } from 'ai-workflow-engine';
+import { makeCmuxClaudeAdapter, register, awaitInbox, reply, runProcess } from 'agent-surface-adapters';
 import { loadConfig, loadSecrets, repoAliases } from './config.js';
 import { logger } from './logger.js';
 import { makeAuditLog } from './audit.js';
@@ -6,6 +7,7 @@ import { makeRegistry } from './registry/index.js';
 import { makeThreadStore } from './thread-state.js';
 import { ApprovalRegistry } from './escalation/approval-registry.js';
 import { PendingRuns } from './agentbus-bridge/pending-runs.js';
+import { handleEnvelope, type BridgeDeps } from './agentbus-bridge/bridge.js';
 import { WorkQueue } from './dispatcher/queue.js';
 import { killActiveRunDescendants } from './dispatcher/kill-tree.js';
 import { Dispatcher } from './dispatcher/dispatcher.js';
@@ -16,6 +18,7 @@ import { loadDotenv } from './util/env.js';
 
 const SWEEP_INTERVAL_MS = 5 * 60 * 1000;
 const SURFACE_CEILING_MS = 30 * 60 * 1000;
+const NAGI_INSTANCE = 'nagi';
 
 async function main(): Promise<void> {
   loadDotenv(); // populate process.env from .env before reading secrets/config
@@ -37,6 +40,28 @@ async function main(): Promise<void> {
   const claude = makeClaudeAdapter();
   const codex = makeCodexAdapter({ sandbox: 'danger-full-access' });
 
+  // A per-run cmux adapter: bound to nagi's chosen runId and to the pending
+  // registry, so the engine's adapter.run() blocks on the SAME promise the
+  // agentbus bridge resolves when the surfaced agent reports its result.
+  const makeSurfaceAdapter = (runId: string) =>
+    makeCmuxClaudeAdapter({
+      nagiInstance: NAGI_INSTANCE,
+      newRunId: () => runId,
+      awaitResult: () => pending.awaitExisting(runId),
+      ...(config.cmux?.socketPath ? { cmuxSocketPath: config.cmux.socketPath } : {}),
+      ...(config.cmux?.password ? { cmuxPassword: config.cmux.password } : {}),
+      ...(config.cmux?.window ? { cmuxWindow: config.cmux.window } : {}),
+    });
+
+  // Best-effort cmux close-surface for surface-aware stop (B6).
+  const closeSurface = async (surfaceRef: string): Promise<void> => {
+    const args: string[] = [];
+    if (config.cmux?.socketPath) args.push('--socket', config.cmux.socketPath);
+    if (config.cmux?.password) args.push('--password', config.cmux.password);
+    args.push('close-surface', surfaceRef);
+    await runProcess('cmux', args);
+  };
+
   // `poster` is filled in once the bot is built; the dispatcher only touches it
   // lazily (inside makeReplier/makeGate), so the late binding is safe.
   let poster: SlackPoster;
@@ -56,13 +81,9 @@ async function main(): Promise<void> {
     newApprovalId: () => newId('appr'),
     cancelActiveRun: () => killActiveRunDescendants(logger),
     pending,
-    // TODO(B7): wire the real cmux surface adapter + host + agentbus bridge.
-    // Until then a surfaced dispatch fails loudly rather than running headless.
-    makeSurfaceAdapter: () => {
-      throw new Error('surfaced runs are not wired yet (pending B7 cmux integration)');
-    },
+    makeSurfaceAdapter,
     surfaceCeilingMs: SURFACE_CEILING_MS,
-    closeSurface: async () => {}, // TODO(B7): cmux close-surface; used by surface-aware stop (B6).
+    closeSurface,
   });
 
   const bot = createSlackBot({
@@ -72,6 +93,37 @@ async function main(): Promise<void> {
     handle: (req) => dispatcher.handle(req),
   });
   poster = bot.poster;
+
+  // Register nagi on the agentbus and pump its inbox through the bridge. agentbus
+  // is a hard dependency for the surfaced lane: a missing binary fails startup
+  // here (fail-fast). A transient poll error mid-run is logged and retried so it
+  // never crashloops the daemon.
+  await register(NAGI_INSTANCE, { persistent: true });
+  const bridgeDeps: BridgeDeps = {
+    poster,
+    pending,
+    registry: approvals,
+    newId: () => newId('appr'),
+    agentbusReply: (askId, payload) => reply(askId, NAGI_INSTANCE, payload),
+    log: logger,
+  };
+  let pumping = true;
+  const pump = async (): Promise<void> => {
+    while (pumping) {
+      try {
+        const envs = await awaitInbox(NAGI_INSTANCE, 1000);
+        for (const env of envs) {
+          void handleEnvelope(env as never, bridgeDeps).catch((e) =>
+            logger.error('bridge handleEnvelope threw', { error: String(e) }),
+          );
+        }
+      } catch (e) {
+        logger.error('agentbus inbox poll failed', { error: String(e) });
+        await new Promise((r) => setTimeout(r, 1000));
+      }
+    }
+  };
+  void pump();
 
   const sweep = setInterval(() => {
     const removed = threadStore.sweep();
