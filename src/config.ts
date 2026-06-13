@@ -26,7 +26,11 @@ const configSchema = z.object({
   // Repo references are a configured alias map; free-form paths are
   // unrepresentable in workflow arg schemas (D13).
   repos: z.record(z.string().min(1), z.string().refine(isAbsolute, 'repo path must be absolute')),
-  // Optional cmux access for the surfaced lane; absent → surfaced runs are disabled.
+  // Optional explicit cmux access for the surfaced lane. When omitted, the host
+  // runs `cmux` with no --socket/--password and cmux self-resolves from its env
+  // (CMUX_SOCKET_PATH, CMUX_SOCKET_PASSWORD), default socket, and saved Settings.
+  // Set this only when nagi's environment does NOT inherit those (e.g. bare
+  // launchd); prefer the env vars otherwise to keep the password out of config.
   cmux: z
     .object({
       socketPath: z.string().min(1).optional(),
