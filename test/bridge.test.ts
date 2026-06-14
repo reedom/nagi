@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { handleEnvelope } from '../src/agentbus-bridge/bridge.js';
 import { PendingRuns } from '../src/agentbus-bridge/pending-runs.js';
 import { ApprovalRegistry } from '../src/escalation/approval-registry.js';
+import { ResidentSessions } from '../src/residents/resident-sessions.js';
 
 function deps(over: Partial<Parameters<typeof handleEnvelope>[1]> = {}) {
   const posts: any[] = [];
@@ -11,8 +12,9 @@ function deps(over: Partial<Parameters<typeof handleEnvelope>[1]> = {}) {
     uploadSnippet: vi.fn(async () => {}),
   };
   const pending = new PendingRuns();
+  const residents = new ResidentSessions();
   const approvals = new ApprovalRegistry();
-  return { poster, pending, approvals, posts, base: { poster, pending, approvals, registry: approvals, newId: () => 'appr1', agentbusReply: vi.fn(async () => {}), log: { info(){}, warn(){}, error(){} } as any, ...over } };
+  return { poster, pending, residents, approvals, posts, base: { poster, pending, residents, approvals, registry: approvals, newId: () => 'appr1', agentbusReply: vi.fn(async () => {}), log: { info(){}, warn(){}, error(){} } as any, ...over } };
 }
 
 const never = { schedule: (_f: () => void, _m: number) => () => {} };
@@ -64,5 +66,23 @@ describe('handleEnvelope', () => {
     await handleEnvelope({ id: 'm3', kind: 'message', from: 'ext:awe-rB', payload: { type: 'result', runId: 'rB', text: 'B-done' } }, d.base);
     await expect(awaitedB).resolves.toEqual({ text: 'B-done' });
     expect(d.pending.active()).toEqual(['rA']);
+  });
+
+  it('posts a turn-2 result via the resident when no pending entry exists', async () => {
+    const d = deps();
+    d.residents.add({ runId: 'rR', surfaceRef: 'workspace:rR', channel: 'CR', threadTs: 'TR' });
+    await handleEnvelope({ id: 'm', kind: 'message', from: 'ext:awe-rR', payload: { type: 'result', runId: 'rR', text: 'turn-2 answer' } }, d.base);
+    expect(d.poster.postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ channel: 'CR', thread_ts: 'TR', text: expect.stringContaining('turn-2 answer') }),
+    );
+  });
+
+  it('routes a turn-2 progress envelope through the resident binding', async () => {
+    const d = deps();
+    d.residents.add({ runId: 'rP', surfaceRef: 'workspace:rP', channel: 'CP', threadTs: 'TP' });
+    await handleEnvelope({ id: 'm', kind: 'message', from: 'ext:awe-rP', payload: { type: 'progress', runId: 'rP', text: 'still going' } }, d.base);
+    expect(d.poster.postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ channel: 'CP', thread_ts: 'TP', text: expect.stringContaining('still going') }),
+    );
   });
 });

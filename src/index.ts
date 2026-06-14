@@ -7,6 +7,7 @@ import { makeRegistry } from './registry/index.js';
 import { makeThreadStore } from './thread-state.js';
 import { ApprovalRegistry } from './escalation/approval-registry.js';
 import { PendingRuns } from './agentbus-bridge/pending-runs.js';
+import { ResidentSessions } from './residents/resident-sessions.js';
 import { handleEnvelope, type BridgeDeps } from './agentbus-bridge/bridge.js';
 import { WorkQueue } from './dispatcher/queue.js';
 import { killActiveRunDescendants } from './dispatcher/kill-tree.js';
@@ -33,6 +34,7 @@ async function main(): Promise<void> {
   const threadStore = makeThreadStore();
   const approvals = new ApprovalRegistry();
   const pending = new PendingRuns();
+  const residents = new ResidentSessions();
 
   // The claude adapter gets full Bash; the codex adapter runs full-access too —
   // both match the trusted same-machine model the engine targets. The allowlist
@@ -105,6 +107,7 @@ async function main(): Promise<void> {
   const bridgeDeps: BridgeDeps = {
     poster,
     pending,
+    residents,
     registry: approvals,
     newId: () => newId('appr'),
     agentbusReply: (askId, payload) => reply(askId, NAGI_INSTANCE, payload),

@@ -6,6 +6,7 @@ import { makeGate, makeReplier } from '../slack/ports.js';
 import { makeSlackApprovalChannel } from '../escalation/slack-channel.js';
 import type { ApprovalRegistry } from '../escalation/approval-registry.js';
 import type { PendingRuns } from './pending-runs.js';
+import type { ResidentSessions } from '../residents/resident-sessions.js';
 
 export interface Envelope {
   id: string;
@@ -18,6 +19,7 @@ export interface Envelope {
 export interface BridgeDeps {
   poster: SlackPoster;
   pending: PendingRuns;
+  residents: ResidentSessions;
   registry: ApprovalRegistry;
   newId: () => string;
   /** Sends a reply back over agentbus for an approval ask. */
@@ -32,7 +34,9 @@ export async function handleEnvelope(env: Envelope, deps: BridgeDeps): Promise<v
     deps.log.warn('agentbus envelope without runId', { id: env.id });
     return;
   }
-  const binding = deps.pending.get(runId);
+  const pendingBinding = deps.pending.get(runId);
+  const resident = deps.residents.getByRun(runId);
+  const binding = pendingBinding ?? resident;
   if (!binding) {
     deps.log.warn('agentbus envelope for unknown/expired run', { runId, type });
     return;
@@ -67,7 +71,13 @@ export async function handleEnvelope(env: Envelope, deps: BridgeDeps): Promise<v
 
   if (type === 'result') {
     const text = typeof env.payload['text'] === 'string' ? env.payload['text'] : '';
-    deps.pending.resolveResult(runId, text);
+    if (pendingBinding) {
+      // Turn 1: unblock the engine's run(); the dispatcher posts this result.
+      deps.pending.resolveResult(runId, text);
+    } else {
+      // Turn 2+: no pending await — post the resident's output to its thread.
+      await makeReplier(deps.poster, binding.channel, binding.threadTs).say(text);
+    }
     return;
   }
 
