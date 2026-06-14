@@ -10,6 +10,7 @@ import { checkAuth, REFUSAL_MESSAGE } from '../auth/allowlist.js';
 import { runTriage, type TriageDeps } from '../triage/triage.js';
 import { ApprovalRegistry } from '../escalation/approval-registry.js';
 import type { PendingRuns } from '../agentbus-bridge/pending-runs.js';
+import type { ResidentSessions } from '../residents/resident-sessions.js';
 import { makeSlackApprovalChannel, type ApprovalGate } from '../escalation/slack-channel.js';
 import { WorkQueue } from './queue.js';
 import { decide } from './decide.js';
@@ -17,6 +18,12 @@ import { parseControl, type ControlCommand } from './control.js';
 import { errorMessage, formatResult, formatStatus, shortLabel } from './format.js';
 
 type RunWorkflowFn = (mod: WorkflowModule, opts: RunOptions) => Promise<unknown>;
+
+/** The minimal cmux capability the dispatcher needs to drive a live REPL. */
+export interface SurfaceDriver {
+  send(surfaceRef: string, text: string): Promise<void>;
+  sendKey(surfaceRef: string, key: string): Promise<void>;
+}
 
 export interface DispatcherDeps {
   config: NagiConfig;
@@ -35,8 +42,12 @@ export interface DispatcherDeps {
   /** Kills the active run's process tree; returns how many processes were signalled. */
   cancelActiveRun: () => number;
   pending: PendingRuns;
-  /** Builds a per-run cmux adapter bound to runId + the pending registry. */
-  makeSurfaceAdapter: (runId: string) => CliAdapter;
+  /** Builds a per-run cmux adapter; onSurfaceRef fires with the surface ref once launched. */
+  makeSurfaceAdapter: (runId: string, onSurfaceRef?: (surfaceRef: string) => void) => CliAdapter;
+  /** Live registry of resident agents (thread-addressed). */
+  residents: ResidentSessions;
+  /** Drives a live surface's REPL (send text / submit). */
+  host: SurfaceDriver;
   /** Wall-clock ceiling for a surfaced run (ms). */
   surfaceCeilingMs: number;
   /** Closes a surface by ref (cmux close-surface); best-effort. */

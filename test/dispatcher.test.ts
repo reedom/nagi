@@ -6,6 +6,7 @@ import { makeRegistry } from '../src/registry/index.js';
 import { makeThreadStore } from '../src/thread-state.js';
 import { ApprovalRegistry } from '../src/escalation/approval-registry.js';
 import { PendingRuns } from '../src/agentbus-bridge/pending-runs.js';
+import { ResidentSessions } from '../src/residents/resident-sessions.js';
 import { repoAliases } from '../src/config.js';
 import type { RequestContext } from '../src/types.js';
 import {
@@ -53,6 +54,8 @@ function harness(triageData: Array<Record<string, unknown>>, runWorkflowFn?: Run
     makeSurfaceAdapter: () => adapter,
     surfaceCeilingMs: 1000,
     closeSurface: async () => {},
+    residents: new ResidentSessions(),
+    host: { send: async () => {}, sendKey: async () => {} },
     ...(runWorkflowFn ? { runWorkflowFn } : {}),
   });
   return { dispatcher, replier, audit, queue, threadStore, adapter, cancelActiveRun, registry };

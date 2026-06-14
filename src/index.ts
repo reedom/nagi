@@ -1,5 +1,5 @@
 import { makeClaudeAdapter, makeCodexAdapter } from 'ai-workflow-engine';
-import { makeCmuxClaudeAdapter, register, awaitInbox, reply, runProcess } from 'agent-surface-adapters';
+import { makeCmuxClaudeAdapter, makeCmuxHost, register, awaitInbox, reply, runProcess } from 'agent-surface-adapters';
 import { loadConfig, loadSecrets, repoAliases } from './config.js';
 import { logger } from './logger.js';
 import { makeAuditLog } from './audit.js';
@@ -45,13 +45,16 @@ async function main(): Promise<void> {
   // A per-run cmux adapter: bound to nagi's chosen runId and to the pending
   // registry, so the engine's adapter.run() blocks on the SAME promise the
   // agentbus bridge resolves when the surfaced agent reports its result.
-  const makeSurfaceAdapter = (runId: string) =>
+  const makeSurfaceAdapter = (runId: string, onSurfaceRef?: (surfaceRef: string) => void) =>
     makeCmuxClaudeAdapter({
       nagiInstance: NAGI_INSTANCE,
       newRunId: () => runId,
       awaitResult: () => pending.awaitExisting(runId),
       onSurface: (surface) => {
-        if (surface.ref) pending.setSurfaceRef(runId, surface.ref);
+        if (surface.ref) {
+          pending.setSurfaceRef(runId, surface.ref);
+          onSurfaceRef?.(surface.ref);
+        }
       },
       ...(config.cmux?.socketPath ? { cmuxSocketPath: config.cmux.socketPath } : {}),
       ...(config.cmux?.password ? { cmuxPassword: config.cmux.password } : {}),
@@ -65,6 +68,18 @@ async function main(): Promise<void> {
     if (config.cmux?.password) args.push('--password', config.cmux.password);
     args.push('close-surface', surfaceRef);
     await runProcess('cmux', args);
+  };
+
+  // A standalone cmux host used to drive resident REPLs (send + Return). Shares
+  // the same socket/window config as the surface adapter.
+  const cmuxHost = makeCmuxHost({
+    ...(config.cmux?.socketPath ? { socketPath: config.cmux.socketPath } : {}),
+    ...(config.cmux?.password ? { password: config.cmux.password } : {}),
+    ...(config.cmux?.window ? { window: config.cmux.window } : {}),
+  });
+  const host = {
+    send: (surfaceRef: string, text: string) => cmuxHost.send!(surfaceRef, text),
+    sendKey: (surfaceRef: string, key: string) => cmuxHost.sendKey!(surfaceRef, key),
   };
 
   // `poster` is filled in once the bot is built; the dispatcher only touches it
@@ -89,6 +104,8 @@ async function main(): Promise<void> {
     makeSurfaceAdapter,
     surfaceCeilingMs: SURFACE_CEILING_MS,
     closeSurface,
+    residents,
+    host,
   });
 
   const bot = createSlackBot({

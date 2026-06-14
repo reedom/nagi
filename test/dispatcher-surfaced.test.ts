@@ -6,6 +6,7 @@ import { makeRegistry } from '../src/registry/index.js';
 import { makeThreadStore } from '../src/thread-state.js';
 import { ApprovalRegistry } from '../src/escalation/approval-registry.js';
 import { PendingRuns } from '../src/agentbus-bridge/pending-runs.js';
+import { ResidentSessions } from '../src/residents/resident-sessions.js';
 import { repoAliases } from '../src/config.js';
 import type { RequestContext } from '../src/types.js';
 import { fakeAdapter, recordingAudit, recordingReplier, silentLogger, testConfig, tick } from './helpers.js';
@@ -25,15 +26,19 @@ function surfaceHarness() {
   ]);
   const gate = { post: async () => ({ ts: 'x' }), update: async () => {}, uploadSnippet: async () => {} };
   const closeSurface = vi.fn(async () => {});
-  const makeSurfaceAdapter = (runId: string): CliAdapter => ({
+  const makeSurfaceAdapter = (runId: string, onSurfaceRef?: (surfaceRef: string) => void): CliAdapter => ({
     id: 'cmux',
     caps: { schema: false, resume: false, tools: true },
     async run(): Promise<AgentResult> {
-      pending.setSurfaceRef(runId, `workspace:${runId}`); // mimic the real onSurface -> setSurfaceRef wiring
+      const surfaceRef = `workspace:${runId}`;
+      pending.setSurfaceRef(runId, surfaceRef); // mimic the real onSurface -> setSurfaceRef wiring
+      onSurfaceRef?.(surfaceRef);               // mimic the real onSurface -> resident promotion
       const r = await pending.awaitExisting(runId);
       return { text: r.text, raw: {}, usage: { inputTokens: 0, outputTokens: 0 } };
     },
   });
+  const residents = new ResidentSessions();
+  const host = { send: vi.fn(async () => {}), sendKey: vi.fn(async () => {}) };
   const runWorkflowFn: RunFn = async (_mod, opts) => {
     const adapter = opts.adapters['cmux'];
     if (!adapter) throw new Error('no cmux adapter injected');
@@ -59,9 +64,11 @@ function surfaceHarness() {
     makeSurfaceAdapter,
     surfaceCeilingMs: 10_000,
     closeSurface,
+    residents,
+    host,
     runWorkflowFn,
   });
-  return { dispatcher, replier, audit, queue, pending, closeSurface };
+  return { dispatcher, replier, audit, queue, pending, closeSurface, residents, host };
 }
 
 function req(over: Partial<RequestContext> = {}): RequestContext {
