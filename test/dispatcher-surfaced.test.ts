@@ -6,6 +6,7 @@ import { makeRegistry } from '../src/registry/index.js';
 import { makeThreadStore } from '../src/thread-state.js';
 import { ApprovalRegistry } from '../src/escalation/approval-registry.js';
 import { PendingRuns } from '../src/agentbus-bridge/pending-runs.js';
+import { ResidentSessions } from '../src/residents/resident-sessions.js';
 import { repoAliases } from '../src/config.js';
 import type { RequestContext } from '../src/types.js';
 import { fakeAdapter, recordingAudit, recordingReplier, silentLogger, testConfig, tick } from './helpers.js';
@@ -25,15 +26,19 @@ function surfaceHarness() {
   ]);
   const gate = { post: async () => ({ ts: 'x' }), update: async () => {}, uploadSnippet: async () => {} };
   const closeSurface = vi.fn(async () => {});
-  const makeSurfaceAdapter = (runId: string): CliAdapter => ({
+  const makeSurfaceAdapter = (runId: string, onSurfaceRef?: (surfaceRef: string) => void): CliAdapter => ({
     id: 'cmux',
     caps: { schema: false, resume: false, tools: true },
     async run(): Promise<AgentResult> {
-      pending.setSurfaceRef(runId, `workspace:${runId}`); // mimic the real onSurface -> setSurfaceRef wiring
+      const surfaceRef = `workspace:${runId}`;
+      pending.setSurfaceRef(runId, surfaceRef); // mimic the real onSurface -> setSurfaceRef wiring
+      onSurfaceRef?.(surfaceRef);               // mimic the real onSurface -> resident promotion
       const r = await pending.awaitExisting(runId);
       return { text: r.text, raw: {}, usage: { inputTokens: 0, outputTokens: 0 } };
     },
   });
+  const residents = new ResidentSessions();
+  const host = { send: vi.fn(async () => {}), sendKey: vi.fn(async () => {}) };
   const runWorkflowFn: RunFn = async (_mod, opts) => {
     const adapter = opts.adapters['cmux'];
     if (!adapter) throw new Error('no cmux adapter injected');
@@ -59,9 +64,11 @@ function surfaceHarness() {
     makeSurfaceAdapter,
     surfaceCeilingMs: 10_000,
     closeSurface,
+    residents,
+    host,
     runWorkflowFn,
   });
-  return { dispatcher, replier, audit, queue, pending, closeSurface };
+  return { dispatcher, replier, audit, queue, pending, closeSurface, residents, host };
 }
 
 function req(over: Partial<RequestContext> = {}): RequestContext {
@@ -80,7 +87,19 @@ describe('surfaced dispatch', () => {
     h.pending.resolveResult(runId, 'the answer');
     for (let i = 0; i < 10; i += 1) await tick();
     expect(h.replier.said.some((s) => /the answer/.test(s))).toBe(true);
-    expect(h.audit.entries.at(-1)?.outcome).toBe('completed');
+    expect(h.audit.entries.at(-1)?.outcome).toBe('resident-ready');
+  });
+
+  it('promotes a launched surface into the resident registry for its thread', async () => {
+    const h = surfaceHarness();
+    await h.dispatcher.handle(req({ threadTs: 't-res' }));
+    for (let i = 0; i < 10; i += 1) await tick();
+    const resident = h.residents.getByThread('t-res');
+    expect(resident).toMatchObject({ runId: 'run-surf', surfaceRef: 'workspace:run-surf' });
+    // The launch result is still posted to the thread, plus the interactive hint.
+    h.pending.resolveResult('run-surf', 'the answer');
+    for (let i = 0; i < 10; i += 1) await tick();
+    expect(h.replier.said.some((s) => /reply here to keep talking/i.test(s))).toBe(true);
   });
 
   it('stop cancels active surfaced runs and closes their surfaces', async () => {
@@ -94,5 +113,65 @@ describe('surfaced dispatch', () => {
     expect(h.closeSurface).toHaveBeenCalledWith(`workspace:${runId}`);
     expect(h.pending.active()).toEqual([]);
     expect(h.replier.said.some((s) => /cancel/i.test(s))).toBe(true);
+  });
+});
+
+describe('resident ingress', () => {
+  it('pipes a follow-up in a resident thread straight to the REPL, skipping triage', async () => {
+    const h = surfaceHarness();
+    h.residents.add({ runId: 'run-surf', surfaceRef: 'workspace:run-surf', channel: 'C1', threadTs: 't1' });
+    await h.dispatcher.handle(req({ text: 'follow-up question' }));
+    for (let i = 0; i < 10; i += 1) await tick();
+    expect(h.host.send).toHaveBeenCalledWith('workspace:run-surf', 'follow-up question');
+    expect(h.host.sendKey).toHaveBeenCalledWith('workspace:run-surf', 'Return');
+    expect(h.queue.status().active).toBeFalsy(); // never entered the queue / triage
+    expect(h.audit.entries.at(-1)?.outcome).toBe('resident-input');
+  });
+
+  it('closes the resident and notifies when the surface is gone', async () => {
+    const h = surfaceHarness();
+    h.host.send.mockRejectedValueOnce(new Error('no such surface'));
+    h.residents.add({ runId: 'run-surf', surfaceRef: 'workspace:run-surf', channel: 'C1', threadTs: 't1' });
+    await h.dispatcher.handle(req({ text: 'hello?' }));
+    for (let i = 0; i < 10; i += 1) await tick();
+    expect(h.residents.getByThread('t1')).toBeUndefined();
+    expect(h.replier.said.some((s) => /resident seems gone/i.test(s))).toBe(true);
+  });
+
+  it('triages normally in a thread with no resident', async () => {
+    const h = surfaceHarness();
+    await h.dispatcher.handle(req());
+    for (let i = 0; i < 10; i += 1) await tick();
+    expect(h.host.send).not.toHaveBeenCalled();
+    expect(h.pending.active()).toHaveLength(1); // the surface workflow launched
+  });
+
+  it('done retires the thread resident and closes its surface', async () => {
+    const h = surfaceHarness();
+    h.residents.add({ runId: 'run-surf', surfaceRef: 'workspace:run-surf', channel: 'C1', threadTs: 't1' });
+    await h.dispatcher.handle(req({ text: 'done' }));
+    for (let i = 0; i < 10; i += 1) await tick();
+    expect(h.closeSurface).toHaveBeenCalledWith('workspace:run-surf');
+    expect(h.residents.getByThread('t1')).toBeUndefined();
+    expect(h.replier.said.some((s) => /closed/i.test(s))).toBe(true);
+  });
+
+  it('done in a thread with no resident posts a friendly notice', async () => {
+    const h = surfaceHarness();
+    await h.dispatcher.handle(req({ text: 'done', threadTs: 't-empty' }));
+    for (let i = 0; i < 10; i += 1) await tick();
+    expect(h.closeSurface).not.toHaveBeenCalled();
+    expect(h.replier.said.some((s) => /no .*resident/i.test(s))).toBe(true);
+  });
+
+  it('stop closes every resident surface and clears the registry', async () => {
+    const h = surfaceHarness();
+    h.residents.add({ runId: 'r-a', surfaceRef: 'workspace:r-a', channel: 'C1', threadTs: 't-a' });
+    h.residents.add({ runId: 'r-b', surfaceRef: 'workspace:r-b', channel: 'C1', threadTs: 't-b' });
+    await h.dispatcher.handle(req({ text: 'stop', threadTs: 't-ctl' }));
+    for (let i = 0; i < 10; i += 1) await tick();
+    expect(h.closeSurface).toHaveBeenCalledWith('workspace:r-a');
+    expect(h.closeSurface).toHaveBeenCalledWith('workspace:r-b');
+    expect(h.residents.list()).toEqual([]);
   });
 });

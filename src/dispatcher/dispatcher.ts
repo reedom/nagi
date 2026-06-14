@@ -10,6 +10,7 @@ import { checkAuth, REFUSAL_MESSAGE } from '../auth/allowlist.js';
 import { runTriage, type TriageDeps } from '../triage/triage.js';
 import { ApprovalRegistry } from '../escalation/approval-registry.js';
 import type { PendingRuns } from '../agentbus-bridge/pending-runs.js';
+import type { ResidentSessions } from '../residents/resident-sessions.js';
 import { makeSlackApprovalChannel, type ApprovalGate } from '../escalation/slack-channel.js';
 import { WorkQueue } from './queue.js';
 import { decide } from './decide.js';
@@ -17,6 +18,15 @@ import { parseControl, type ControlCommand } from './control.js';
 import { errorMessage, formatResult, formatStatus, shortLabel } from './format.js';
 
 type RunWorkflowFn = (mod: WorkflowModule, opts: RunOptions) => Promise<unknown>;
+
+const RESIDENT_HINT =
+  ':speech_balloon: Surface is live — reply here to keep talking; say `done` to close it.';
+
+/** The minimal cmux capability the dispatcher needs to drive a live REPL. */
+export interface SurfaceDriver {
+  send(surfaceRef: string, text: string): Promise<void>;
+  sendKey(surfaceRef: string, key: string): Promise<void>;
+}
 
 export interface DispatcherDeps {
   config: NagiConfig;
@@ -35,8 +45,12 @@ export interface DispatcherDeps {
   /** Kills the active run's process tree; returns how many processes were signalled. */
   cancelActiveRun: () => number;
   pending: PendingRuns;
-  /** Builds a per-run cmux adapter bound to runId + the pending registry. */
-  makeSurfaceAdapter: (runId: string) => CliAdapter;
+  /** Builds a per-run cmux adapter; onSurfaceRef fires with the surface ref once launched. */
+  makeSurfaceAdapter: (runId: string, onSurfaceRef?: (surfaceRef: string) => void) => CliAdapter;
+  /** Live registry of resident agents (thread-addressed). */
+  residents: ResidentSessions;
+  /** Drives a live surface's REPL (send text / submit). */
+  host: SurfaceDriver;
   /** Wall-clock ceiling for a surfaced run (ms). */
   surfaceCeilingMs: number;
   /** Closes a surface by ref (cmux close-surface); best-effort. */
@@ -69,6 +83,12 @@ export class Dispatcher {
       return;
     }
 
+    const resident = this.deps.residents.getByThread(req.threadTs);
+    if (resident) {
+      await this.feedResident(resident, req, replier);
+      return;
+    }
+
     const pending = this.deps.threadStore.get(req.threadTs);
     const text = pending ? `${pending.originalText}\n\n[follow-up] ${req.text}` : req.text;
     if (pending) this.deps.threadStore.delete(req.threadTs);
@@ -86,6 +106,23 @@ export class Dispatcher {
     }
   }
 
+  /** Pipe an in-thread message straight into a resident's live REPL (send-immediately). */
+  private async feedResident(
+    resident: { surfaceRef: string },
+    req: RequestContext,
+    replier: ThreadReplier,
+  ): Promise<void> {
+    try {
+      await this.deps.host.send(resident.surfaceRef, req.text);
+      await this.deps.host.sendKey(resident.surfaceRef, 'Return');
+      this.record(req, 'resident-input');
+    } catch (err) {
+      this.deps.residents.remove(req.threadTs);
+      await this.safeSay(replier, ':ghost: Resident seems gone; closing. Send your message again to start fresh.');
+      this.record(req, 'failed', { detail: `resident send: ${errorMessage(err)}` });
+    }
+  }
+
   private async handleControl(
     command: ControlCommand,
     req: RequestContext,
@@ -94,6 +131,20 @@ export class Dispatcher {
     if (command === 'status') {
       await this.safeSay(replier, formatStatus(this.deps.queue.status()));
       this.record(req, 'control', { detail: 'status' });
+      return;
+    }
+    if (command === 'done') {
+      const resident = this.deps.residents.remove(req.threadTs);
+      if (!resident) {
+        await this.safeSay(replier, 'No resident agent in this thread.');
+        this.record(req, 'control', { detail: 'done: none' });
+        return;
+      }
+      void this.deps.closeSurface(resident.surfaceRef).catch((e) =>
+        this.deps.log.warn('close-surface failed', { runId: resident.runId, error: errorMessage(e) }),
+      );
+      await this.safeSay(replier, ':octagonal_sign: Resident closed.');
+      this.record(req, 'control', { detail: 'done' });
       return;
     }
     this.cancelling = true;
@@ -108,12 +159,21 @@ export class Dispatcher {
         );
       }
     }
+    const residents = this.deps.residents.list();
+    for (const resident of residents) {
+      this.deps.residents.remove(resident.threadTs);
+      void this.deps.closeSurface(resident.surfaceRef).catch((e) =>
+        this.deps.log.warn('close-surface failed', { runId: resident.runId, error: errorMessage(e) }),
+      );
+    }
     await this.safeSay(
       replier,
       `Cancelling: signalled ${killed} process(es), dropped ${dropped} queued request(s), ` +
-        `and cancelled ${surfaced.length} surface run(s).`,
+        `cancelled ${surfaced.length} surface run(s), and closed ${residents.length} resident(s).`,
     );
-    this.record(req, 'cancelled', { detail: `killed=${killed} dropped=${dropped} surfaced=${surfaced.length}` });
+    this.record(req, 'cancelled', {
+      detail: `killed=${killed} dropped=${dropped} surfaced=${surfaced.length} residents=${residents.length}`,
+    });
   }
 
   private async process(req: RequestContext, text: string, replier: ThreadReplier): Promise<void> {
@@ -197,7 +257,9 @@ export class Dispatcher {
     decision: Extract<ReturnType<typeof decide>, { kind: 'dispatch' }>,
   ): void {
     const runId = this.deps.newRunId();
-    const adapter = this.deps.makeSurfaceAdapter(runId);
+    const adapter = this.deps.makeSurfaceAdapter(runId, (surfaceRef) =>
+      this.deps.residents.add({ runId, surfaceRef, channel: req.channel, threadTs: req.threadTs }),
+    );
     const awaited = this.deps.pending.await(runId, {
       channel: req.channel,
       threadTs: req.threadTs,
@@ -214,9 +276,16 @@ export class Dispatcher {
     void this.runWorkflowFn(decision.entry.module, options)
       .then(async (result) => {
         await this.safeSay(replier, formatResult(result));
-        this.record(req, 'completed', { workflowId: decision.entry.id, args: decision.args });
+        await this.safeSay(replier, RESIDENT_HINT);
+        this.record(req, 'resident-ready', { workflowId: decision.entry.id, args: decision.args });
       })
       .catch(async (err) => {
+        const stale = this.deps.residents.remove(req.threadTs);
+        if (stale) {
+          void this.deps.closeSurface(stale.surfaceRef).catch((e) =>
+            this.deps.log.warn('close-surface failed', { runId, error: errorMessage(e) }),
+          );
+        }
         const cancelled = /cancelled/.test(errorMessage(err));
         const prefix = cancelled ? ':octagonal_sign: Surface run cancelled' : ':warning: Surface run failed';
         await this.safeSay(replier, `${prefix}: ${errorMessage(err)}`);
