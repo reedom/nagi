@@ -23,6 +23,7 @@ export const surfaceEntry: EntryFactory = (aliases: string[]): RegistryEntry => 
   id: 'surface',
   description:
     'Run a task as an interactive agent on a visible cmux surface (you can watch and intervene). ' +
+    'The surface stays resident: reply in the same thread to keep talking to it, and say `done` to close it. ' +
     'Use when the user asks to open/run something on a surface, or wants a watchable interactive run.',
   argsSchema: z.object({ repo: repoEnum(aliases), task: z.string().min(1) }),
   module: surfaceModule,
