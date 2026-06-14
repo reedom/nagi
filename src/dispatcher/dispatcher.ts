@@ -19,6 +19,9 @@ import { errorMessage, formatResult, formatStatus, shortLabel } from './format.j
 
 type RunWorkflowFn = (mod: WorkflowModule, opts: RunOptions) => Promise<unknown>;
 
+const RESIDENT_HINT =
+  ':speech_balloon: Surface is live — reply here to keep talking; say `done` to close it.';
+
 /** The minimal cmux capability the dispatcher needs to drive a live REPL. */
 export interface SurfaceDriver {
   send(surfaceRef: string, text: string): Promise<void>;
@@ -208,7 +211,9 @@ export class Dispatcher {
     decision: Extract<ReturnType<typeof decide>, { kind: 'dispatch' }>,
   ): void {
     const runId = this.deps.newRunId();
-    const adapter = this.deps.makeSurfaceAdapter(runId);
+    const adapter = this.deps.makeSurfaceAdapter(runId, (surfaceRef) =>
+      this.deps.residents.add({ runId, surfaceRef, channel: req.channel, threadTs: req.threadTs }),
+    );
     const awaited = this.deps.pending.await(runId, {
       channel: req.channel,
       threadTs: req.threadTs,
@@ -225,9 +230,16 @@ export class Dispatcher {
     void this.runWorkflowFn(decision.entry.module, options)
       .then(async (result) => {
         await this.safeSay(replier, formatResult(result));
-        this.record(req, 'completed', { workflowId: decision.entry.id, args: decision.args });
+        await this.safeSay(replier, RESIDENT_HINT);
+        this.record(req, 'resident-ready', { workflowId: decision.entry.id, args: decision.args });
       })
       .catch(async (err) => {
+        const stale = this.deps.residents.remove(req.threadTs);
+        if (stale) {
+          void this.deps.closeSurface(stale.surfaceRef).catch((e) =>
+            this.deps.log.warn('close-surface failed', { runId, error: errorMessage(e) }),
+          );
+        }
         const cancelled = /cancelled/.test(errorMessage(err));
         const prefix = cancelled ? ':octagonal_sign: Surface run cancelled' : ':warning: Surface run failed';
         await this.safeSay(replier, `${prefix}: ${errorMessage(err)}`);

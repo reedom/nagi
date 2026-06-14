@@ -87,7 +87,19 @@ describe('surfaced dispatch', () => {
     h.pending.resolveResult(runId, 'the answer');
     for (let i = 0; i < 10; i += 1) await tick();
     expect(h.replier.said.some((s) => /the answer/.test(s))).toBe(true);
-    expect(h.audit.entries.at(-1)?.outcome).toBe('completed');
+    expect(h.audit.entries.at(-1)?.outcome).toBe('resident-ready');
+  });
+
+  it('promotes a launched surface into the resident registry for its thread', async () => {
+    const h = surfaceHarness();
+    await h.dispatcher.handle(req({ threadTs: 't-res' }));
+    for (let i = 0; i < 10; i += 1) await tick();
+    const resident = h.residents.getByThread('t-res');
+    expect(resident).toMatchObject({ runId: 'run-surf', surfaceRef: 'workspace:run-surf' });
+    // The launch result is still posted to the thread, plus the interactive hint.
+    h.pending.resolveResult('run-surf', 'the answer');
+    for (let i = 0; i < 10; i += 1) await tick();
+    expect(h.replier.said.some((s) => /reply here to keep talking/i.test(s))).toBe(true);
   });
 
   it('stop cancels active surfaced runs and closes their surfaces', async () => {
