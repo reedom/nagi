@@ -24,4 +24,6 @@ export type Outcome =
   | 'completed'
   | 'failed'
   | 'cancelled'
-  | 'control';
+  | 'control'
+  | 'resident-input'
+  | 'resident-ready';
