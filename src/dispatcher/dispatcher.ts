@@ -159,12 +159,21 @@ export class Dispatcher {
         );
       }
     }
+    const residents = this.deps.residents.list();
+    for (const resident of residents) {
+      this.deps.residents.remove(resident.threadTs);
+      void this.deps.closeSurface(resident.surfaceRef).catch((e) =>
+        this.deps.log.warn('close-surface failed', { runId: resident.runId, error: errorMessage(e) }),
+      );
+    }
     await this.safeSay(
       replier,
       `Cancelling: signalled ${killed} process(es), dropped ${dropped} queued request(s), ` +
-        `and cancelled ${surfaced.length} surface run(s).`,
+        `cancelled ${surfaced.length} surface run(s), and closed ${residents.length} resident(s).`,
     );
-    this.record(req, 'cancelled', { detail: `killed=${killed} dropped=${dropped} surfaced=${surfaced.length}` });
+    this.record(req, 'cancelled', {
+      detail: `killed=${killed} dropped=${dropped} surfaced=${surfaced.length} residents=${residents.length}`,
+    });
   }
 
   private async process(req: RequestContext, text: string, replier: ThreadReplier): Promise<void> {

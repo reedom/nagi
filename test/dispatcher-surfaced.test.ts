@@ -163,4 +163,15 @@ describe('resident ingress', () => {
     expect(h.closeSurface).not.toHaveBeenCalled();
     expect(h.replier.said.some((s) => /no .*resident/i.test(s))).toBe(true);
   });
+
+  it('stop closes every resident surface and clears the registry', async () => {
+    const h = surfaceHarness();
+    h.residents.add({ runId: 'r-a', surfaceRef: 'workspace:r-a', channel: 'C1', threadTs: 't-a' });
+    h.residents.add({ runId: 'r-b', surfaceRef: 'workspace:r-b', channel: 'C1', threadTs: 't-b' });
+    await h.dispatcher.handle(req({ text: 'stop', threadTs: 't-ctl' }));
+    for (let i = 0; i < 10; i += 1) await tick();
+    expect(h.closeSurface).toHaveBeenCalledWith('workspace:r-a');
+    expect(h.closeSurface).toHaveBeenCalledWith('workspace:r-b');
+    expect(h.residents.list()).toEqual([]);
+  });
 });
