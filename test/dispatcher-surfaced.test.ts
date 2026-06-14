@@ -115,3 +115,34 @@ describe('surfaced dispatch', () => {
     expect(h.replier.said.some((s) => /cancel/i.test(s))).toBe(true);
   });
 });
+
+describe('resident ingress', () => {
+  it('pipes a follow-up in a resident thread straight to the REPL, skipping triage', async () => {
+    const h = surfaceHarness();
+    h.residents.add({ runId: 'run-surf', surfaceRef: 'workspace:run-surf', channel: 'C1', threadTs: 't1' });
+    await h.dispatcher.handle(req({ text: 'follow-up question' }));
+    for (let i = 0; i < 10; i += 1) await tick();
+    expect(h.host.send).toHaveBeenCalledWith('workspace:run-surf', 'follow-up question');
+    expect(h.host.sendKey).toHaveBeenCalledWith('workspace:run-surf', 'Return');
+    expect(h.queue.status().active).toBeFalsy(); // never entered the queue / triage
+    expect(h.audit.entries.at(-1)?.outcome).toBe('resident-input');
+  });
+
+  it('closes the resident and notifies when the surface is gone', async () => {
+    const h = surfaceHarness();
+    h.host.send.mockRejectedValueOnce(new Error('no such surface'));
+    h.residents.add({ runId: 'run-surf', surfaceRef: 'workspace:run-surf', channel: 'C1', threadTs: 't1' });
+    await h.dispatcher.handle(req({ text: 'hello?' }));
+    for (let i = 0; i < 10; i += 1) await tick();
+    expect(h.residents.getByThread('t1')).toBeUndefined();
+    expect(h.replier.said.some((s) => /resident seems gone/i.test(s))).toBe(true);
+  });
+
+  it('triages normally in a thread with no resident', async () => {
+    const h = surfaceHarness();
+    await h.dispatcher.handle(req());
+    for (let i = 0; i < 10; i += 1) await tick();
+    expect(h.host.send).not.toHaveBeenCalled();
+    expect(h.pending.active()).toHaveLength(1); // the surface workflow launched
+  });
+});

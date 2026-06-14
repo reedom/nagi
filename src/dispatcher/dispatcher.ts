@@ -83,6 +83,12 @@ export class Dispatcher {
       return;
     }
 
+    const resident = this.deps.residents.getByThread(req.threadTs);
+    if (resident) {
+      await this.feedResident(resident, req, replier);
+      return;
+    }
+
     const pending = this.deps.threadStore.get(req.threadTs);
     const text = pending ? `${pending.originalText}\n\n[follow-up] ${req.text}` : req.text;
     if (pending) this.deps.threadStore.delete(req.threadTs);
@@ -97,6 +103,23 @@ export class Dispatcher {
         `I'm busy with “${admission.busyWith}”. Queued your request (position ${admission.position}); ` +
           `I'll run it when the current one finishes.`,
       );
+    }
+  }
+
+  /** Pipe an in-thread message straight into a resident's live REPL (send-immediately). */
+  private async feedResident(
+    resident: { surfaceRef: string },
+    req: RequestContext,
+    replier: ThreadReplier,
+  ): Promise<void> {
+    try {
+      await this.deps.host.send(resident.surfaceRef, req.text);
+      await this.deps.host.sendKey(resident.surfaceRef, 'Return');
+      this.record(req, 'resident-input');
+    } catch (err) {
+      this.deps.residents.remove(req.threadTs);
+      await this.safeSay(replier, ':ghost: Resident seems gone; closing. Send your message again to start fresh.');
+      this.record(req, 'failed', { detail: `resident send: ${errorMessage(err)}` });
     }
   }
 
