@@ -155,19 +155,22 @@ function bindingFor(runId): { channel, threadTs } | undefined {
 `bindingFor` backs the **progress**, **approval**, and **result** handlers, so turn-2+
 output and approvals find their thread even though `PendingRuns` no longer has an entry.
 
-The **result** handler changes to:
+The **result** handler splits by turn, keyed on whether a `PendingRuns` entry exists:
 
 ```
 const binding = bindingFor(runId)
 if (!binding) { log unknown; return }
-post the result text to binding's thread        // always — every turn posts here
-pending.resolveResult(runId, text)              // only if a pending entry exists (unblocks turn-1 run())
+if (pending.get(runId)) pending.resolveResult(runId, text)   // turn 1: unblock run(); the dispatcher posts it
+else                    post the result text to binding's thread   // turn 2+: no pending await, bridge posts
 ```
 
-This moves turn-1 result posting out of `launchSurfaced.then` and into the bridge, so all
-turns (1 and N) post through one path. `launchSurfaced.then` no longer posts the result;
-it records `resident-ready` (launch succeeded, resident now live) and posts the one-time
-in-thread hint (§ Lifecycle). `launchSurfaced.catch` handles launch failure (§ Error
+Each registry owns its own turns: `PendingRuns` owns the turn-1 launch handshake (the
+**dispatcher** posts that result, exactly as Phase 2), and `ResidentSessions` owns every
+later turn (the **bridge** posts those — there is no pending await to resolve). This is
+lower-churn than routing all posting through the bridge and keeps the existing turn-1
+path and its tests untouched. `launchSurfaced.then` keeps posting the turn-1 result, then
+records `resident-ready` (launch succeeded, resident now live) and posts the one-time
+in-thread hint (§ Lifecycle); `launchSurfaced.catch` handles launch failure (§ Error
 handling). The bridge gains a `residents` dependency.
 
 ### 5. cmux host handle in nagi (`index.ts`)
