@@ -133,6 +133,20 @@ export class Dispatcher {
       this.record(req, 'control', { detail: 'status' });
       return;
     }
+    if (command === 'done') {
+      const resident = this.deps.residents.remove(req.threadTs);
+      if (!resident) {
+        await this.safeSay(replier, 'No resident agent in this thread.');
+        this.record(req, 'control', { detail: 'done: none' });
+        return;
+      }
+      void this.deps.closeSurface(resident.surfaceRef).catch((e) =>
+        this.deps.log.warn('close-surface failed', { runId: resident.runId, error: errorMessage(e) }),
+      );
+      await this.safeSay(replier, ':octagonal_sign: Resident closed.');
+      this.record(req, 'control', { detail: 'done' });
+      return;
+    }
     this.cancelling = true;
     const killed = this.deps.cancelActiveRun();
     const dropped = this.deps.queue.clearPending();

@@ -145,4 +145,22 @@ describe('resident ingress', () => {
     expect(h.host.send).not.toHaveBeenCalled();
     expect(h.pending.active()).toHaveLength(1); // the surface workflow launched
   });
+
+  it('done retires the thread resident and closes its surface', async () => {
+    const h = surfaceHarness();
+    h.residents.add({ runId: 'run-surf', surfaceRef: 'workspace:run-surf', channel: 'C1', threadTs: 't1' });
+    await h.dispatcher.handle(req({ text: 'done' }));
+    for (let i = 0; i < 10; i += 1) await tick();
+    expect(h.closeSurface).toHaveBeenCalledWith('workspace:run-surf');
+    expect(h.residents.getByThread('t1')).toBeUndefined();
+    expect(h.replier.said.some((s) => /closed/i.test(s))).toBe(true);
+  });
+
+  it('done in a thread with no resident posts a friendly notice', async () => {
+    const h = surfaceHarness();
+    await h.dispatcher.handle(req({ text: 'done', threadTs: 't-empty' }));
+    for (let i = 0; i < 10; i += 1) await tick();
+    expect(h.closeSurface).not.toHaveBeenCalled();
+    expect(h.replier.said.some((s) => /no .*resident/i.test(s))).toBe(true);
+  });
 });
