@@ -8,6 +8,9 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "build:deps": "pnpm -C ../ai-workflow-engine build && pnpm -C ../agent-surface-adapters build",
+    "sync:deps": "pnpm run build:deps && pnpm install",
+    "prestart": "pnpm run sync:deps",
     "start": "node dist/index.js",
     "dev": "tsx src/index.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
