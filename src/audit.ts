@@ -9,6 +9,8 @@ export interface AuditEntry {
   ts: string;
   teamId: string;
   userId: string;
+  channel?: string;
+  threadTs?: string;
   text: string;
   workflowId?: string;
   args?: unknown;

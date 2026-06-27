@@ -136,8 +136,11 @@ export class Dispatcher {
     if (command === 'done') {
       const resident = this.deps.residents.remove(req.threadTs);
       if (!resident) {
+        const liveKeys = this.deps.residents.list().map((r) => r.threadTs);
         await this.safeSay(replier, 'No resident agent in this thread.');
-        this.record(req, 'control', { detail: 'done: none' });
+        this.record(req, 'control', {
+          detail: `done: none (lookup=${req.threadTs} live=[${liveKeys.join(',')}])`,
+        });
         return;
       }
       void this.deps.closeSurface(resident.surfaceRef).catch((e) =>
@@ -307,6 +310,8 @@ export class Dispatcher {
     this.deps.audit.record({
       teamId: req.teamId,
       userId: req.userId,
+      channel: req.channel,
+      threadTs: req.threadTs,
       text: req.text,
       outcome,
       ...extra,
