@@ -1,0 +1,355 @@
+{
+  "schema_version": 1,
+  "docs": [
+    {
+      "id": "fr:01-slack-front-door",
+      "kind": "fr",
+      "path": "docs/fr/01-slack-front-door.md",
+      "title": "Slack Front Door",
+      "spec": "nagi-v1",
+      "provides": [],
+      "implements": [],
+      "depends_on": [],
+      "related": [
+        "fr:05-request-dispatch",
+        "fr:08-escalation-approvals",
+        "fr:11-daemon-lifecycle"
+      ],
+      "modules": [
+        "src/slack/",
+        "src/types.ts"
+      ]
+    },
+    {
+      "id": "fr:02-authorization",
+      "kind": "fr",
+      "path": "docs/fr/02-authorization.md",
+      "title": "Authorization",
+      "spec": "nagi-v1",
+      "provides": [],
+      "implements": [],
+      "depends_on": [],
+      "related": [
+        "fr:01-slack-front-door",
+        "fr:05-request-dispatch",
+        "fr:09-audit-log"
+      ],
+      "modules": [
+        "src/auth/allowlist.ts"
+      ]
+    },
+    {
+      "id": "fr:03-triage",
+      "kind": "fr",
+      "path": "docs/fr/03-triage.md",
+      "title": "LLM Triage",
+      "spec": "nagi-v1",
+      "provides": [],
+      "implements": [],
+      "depends_on": [
+        "fr:10-configuration"
+      ],
+      "related": [
+        "fr:04-workflow-registry",
+        "fr:05-request-dispatch"
+      ],
+      "modules": [
+        "src/triage/"
+      ]
+    },
+    {
+      "id": "fr:04-workflow-registry",
+      "kind": "fr",
+      "path": "docs/fr/04-workflow-registry.md",
+      "title": "Workflow Registry",
+      "spec": "nagi-v1",
+      "provides": [],
+      "implements": [],
+      "depends_on": [
+        "fr:10-configuration"
+      ],
+      "related": [
+        "fr:03-triage",
+        "fr:05-request-dispatch",
+        "fr:12-agentbus-surfaced-lane"
+      ],
+      "modules": [
+        "src/registry/index.ts",
+        "src/registry/types.ts",
+        "src/registry/workflows/review-repo.ts",
+        "src/registry/workflows/research.ts",
+        "src/registry/workflows/approval-demo.ts"
+      ]
+    },
+    {
+      "id": "fr:05-request-dispatch",
+      "kind": "fr",
+      "path": "docs/fr/05-request-dispatch.md",
+      "title": "Request Dispatch & Clarification",
+      "spec": "nagi-v1",
+      "provides": [],
+      "implements": [],
+      "depends_on": [
+        "fr:03-triage",
+        "fr:04-workflow-registry"
+      ],
+      "related": [
+        "fr:02-authorization",
+        "fr:06-single-flight-queue",
+        "fr:08-escalation-approvals",
+        "fr:12-agentbus-surfaced-lane",
+        "fr:13-resident-agent"
+      ],
+      "modules": [
+        "src/dispatcher/dispatcher.ts",
+        "src/dispatcher/decide.ts",
+        "src/dispatcher/format.ts",
+        "src/thread-state.ts"
+      ]
+    },
+    {
+      "id": "fr:06-single-flight-queue",
+      "kind": "fr",
+      "path": "docs/fr/06-single-flight-queue.md",
+      "title": "Single-Flight Queue",
+      "spec": "nagi-v1",
+      "provides": [],
+      "implements": [],
+      "depends_on": [],
+      "related": [
+        "fr:05-request-dispatch",
+        "fr:07-control-commands"
+      ],
+      "modules": [
+        "src/dispatcher/queue.ts"
+      ]
+    },
+    {
+      "id": "fr:07-control-commands",
+      "kind": "fr",
+      "path": "docs/fr/07-control-commands.md",
+      "title": "Control Commands",
+      "spec": "nagi-v1",
+      "provides": [],
+      "implements": [],
+      "depends_on": [],
+      "related": [
+        "fr:05-request-dispatch",
+        "fr:06-single-flight-queue",
+        "fr:08-escalation-approvals",
+        "fr:12-agentbus-surfaced-lane",
+        "fr:13-resident-agent"
+      ],
+      "modules": [
+        "src/dispatcher/control.ts",
+        "src/dispatcher/kill-tree.ts"
+      ]
+    },
+    {
+      "id": "fr:08-escalation-approvals",
+      "kind": "fr",
+      "path": "docs/fr/08-escalation-approvals.md",
+      "title": "Escalation & Approvals",
+      "spec": "nagi-v1",
+      "provides": [],
+      "implements": [],
+      "depends_on": [
+        "fr:01-slack-front-door"
+      ],
+      "related": [
+        "fr:05-request-dispatch",
+        "fr:12-agentbus-surfaced-lane"
+      ],
+      "modules": [
+        "src/escalation/"
+      ]
+    },
+    {
+      "id": "fr:09-audit-log",
+      "kind": "fr",
+      "path": "docs/fr/09-audit-log.md",
+      "title": "Audit Log",
+      "spec": "nagi-v1",
+      "provides": [],
+      "implements": [],
+      "depends_on": [],
+      "related": [
+        "fr:05-request-dispatch",
+        "fr:10-configuration"
+      ],
+      "modules": [
+        "src/audit.ts"
+      ]
+    },
+    {
+      "id": "fr:10-configuration",
+      "kind": "fr",
+      "path": "docs/fr/10-configuration.md",
+      "title": "Configuration",
+      "spec": "nagi-v1",
+      "provides": [],
+      "implements": [],
+      "depends_on": [],
+      "related": [
+        "fr:02-authorization",
+        "fr:03-triage",
+        "fr:04-workflow-registry",
+        "fr:11-daemon-lifecycle"
+      ],
+      "modules": [
+        "src/config.ts",
+        "src/util/env.ts"
+      ]
+    },
+    {
+      "id": "fr:11-daemon-lifecycle",
+      "kind": "fr",
+      "path": "docs/fr/11-daemon-lifecycle.md",
+      "title": "Daemon Lifecycle",
+      "spec": "nagi-v1",
+      "provides": [],
+      "implements": [],
+      "depends_on": [
+        "fr:10-configuration"
+      ],
+      "related": [
+        "fr:01-slack-front-door",
+        "fr:12-agentbus-surfaced-lane"
+      ],
+      "modules": [
+        "src/index.ts",
+        "src/logger.ts",
+        "src/util/id.ts",
+        "src/util/timeout.ts",
+        "deploy/com.reedom.nagi.plist"
+      ]
+    },
+    {
+      "id": "fr:12-agentbus-surfaced-lane",
+      "kind": "fr",
+      "path": "docs/fr/12-agentbus-surfaced-lane.md",
+      "title": "Agentbus Surfaced Lane",
+      "spec": "nagi-phase2",
+      "provides": [],
+      "implements": [],
+      "depends_on": [
+        "fr:08-escalation-approvals"
+      ],
+      "related": [
+        "fr:04-workflow-registry",
+        "fr:05-request-dispatch",
+        "fr:11-daemon-lifecycle",
+        "fr:13-resident-agent"
+      ],
+      "modules": [
+        "src/agentbus-bridge/",
+        "src/registry/workflows/surface.ts"
+      ]
+    },
+    {
+      "id": "fr:13-resident-agent",
+      "kind": "fr",
+      "path": "docs/fr/13-resident-agent.md",
+      "title": "Resident Agent",
+      "spec": "nagi-phase3",
+      "provides": [],
+      "implements": [],
+      "depends_on": [
+        "fr:12-agentbus-surfaced-lane"
+      ],
+      "related": [
+        "fr:05-request-dispatch",
+        "fr:07-control-commands"
+      ],
+      "modules": [
+        "src/residents/resident-sessions.ts"
+      ]
+    }
+  ],
+  "modules": {
+    "deploy/com.reedom.nagi.plist": [
+      "fr:11-daemon-lifecycle"
+    ],
+    "src/agentbus-bridge/": [
+      "fr:12-agentbus-surfaced-lane"
+    ],
+    "src/audit.ts": [
+      "fr:09-audit-log"
+    ],
+    "src/auth/allowlist.ts": [
+      "fr:02-authorization"
+    ],
+    "src/config.ts": [
+      "fr:10-configuration"
+    ],
+    "src/dispatcher/control.ts": [
+      "fr:07-control-commands"
+    ],
+    "src/dispatcher/decide.ts": [
+      "fr:05-request-dispatch"
+    ],
+    "src/dispatcher/dispatcher.ts": [
+      "fr:05-request-dispatch"
+    ],
+    "src/dispatcher/format.ts": [
+      "fr:05-request-dispatch"
+    ],
+    "src/dispatcher/kill-tree.ts": [
+      "fr:07-control-commands"
+    ],
+    "src/dispatcher/queue.ts": [
+      "fr:06-single-flight-queue"
+    ],
+    "src/escalation/": [
+      "fr:08-escalation-approvals"
+    ],
+    "src/index.ts": [
+      "fr:11-daemon-lifecycle"
+    ],
+    "src/logger.ts": [
+      "fr:11-daemon-lifecycle"
+    ],
+    "src/registry/index.ts": [
+      "fr:04-workflow-registry"
+    ],
+    "src/registry/types.ts": [
+      "fr:04-workflow-registry"
+    ],
+    "src/registry/workflows/approval-demo.ts": [
+      "fr:04-workflow-registry"
+    ],
+    "src/registry/workflows/research.ts": [
+      "fr:04-workflow-registry"
+    ],
+    "src/registry/workflows/review-repo.ts": [
+      "fr:04-workflow-registry"
+    ],
+    "src/registry/workflows/surface.ts": [
+      "fr:12-agentbus-surfaced-lane"
+    ],
+    "src/residents/resident-sessions.ts": [
+      "fr:13-resident-agent"
+    ],
+    "src/slack/": [
+      "fr:01-slack-front-door"
+    ],
+    "src/thread-state.ts": [
+      "fr:05-request-dispatch"
+    ],
+    "src/triage/": [
+      "fr:03-triage"
+    ],
+    "src/types.ts": [
+      "fr:01-slack-front-door"
+    ],
+    "src/util/env.ts": [
+      "fr:10-configuration"
+    ],
+    "src/util/id.ts": [
+      "fr:11-daemon-lifecycle"
+    ],
+    "src/util/timeout.ts": [
+      "fr:11-daemon-lifecycle"
+    ]
+  }
+}
