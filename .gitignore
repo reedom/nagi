@@ -6,3 +6,5 @@ dist/
 nagi.config.json
 .omc/
 audit.jsonl
+
+.lavish/
