@@ -52,7 +52,7 @@ Non-goals:
 | R5 | Persistence = JSON state file (`learnedReposPath`, default `./learned-repos.json`). |
 | R6 | A ticket's repos form a **dependency DAG**; edge `A -> B` means "A depends on B"; process dependencies (upstream/leaves) first. |
 | R7 | Independent ready nodes run **in parallel** (`wf.parallel`) from the start. |
-| R8 | Worktree provisioning is a **replaceable script component** (`WorktreeProvisioner`); default is a config-driven command template modelling worktrunk `wt`. |
+| R8 | Worktree provisioning is a **replaceable external script** (`WorktreeProvisioner` -> `ScriptProvisioner`): nagi invokes the script at `config.worktree.script` (default `scripts/worktree-provision.sh`, wrapping worktrunk `wt`) with `cwd = repoPath`; the script creates/enters the worktree and prints its absolute path on stdout. Swapping the script swaps the mechanism. |
 | R9 | **Cycle detection halts** the run and escalates to a human in-thread; nagi does not auto-resolve cycles. |
 | R10 | A `maxRepos` cap bounds graph growth (runaway protection). |
 
@@ -108,9 +108,16 @@ New module group `src/repo/`:
   `get(ticketRef): RepoGraphData | undefined`, `remember(ticketRef, graph)`,
   plus an `aliases` map for non-ticket hints. Atomic write (temp + rename).
 - `worktree.ts` — `interface WorktreeProvisioner { provision(repoPath, ticket): Promise<string /* worktree cwd */> }`
-  and a default `CommandTemplateProvisioner` that runs `config.worktree.command`
-  with `cwd = repoPath` and computes the worktree path from
-  `config.worktree.cwdTemplate`. Default config models worktrunk.
+  and a default `ScriptProvisioner` that runs the **external script** at
+  `config.worktree.script` with `cwd = repoPath` and `ticket` passed via argv +
+  env (`NAGI_TICKET`, `NAGI_REPO_PATH`). The script owns the mechanism (create /
+  switch the worktree) and prints the worktree's absolute path as its last stdout
+  line; `ScriptProvisioner` reads that back as the agent cwd. **The mechanism is
+  selected by config, not by editing a file.** `config.worktree.script` is the
+  selector: the repo ships example scripts under `scripts/` (e.g. a worktrunk
+  wrapper and a plain `git worktree add` variant), and the operator points the
+  config value at whichever one — or at their own script — without touching the
+  shipped files. Default config selects the worktrunk example.
 - `graph.ts` — `RepoGraph`: nodes (approved repo paths) + edges
   (`from -> to`, reason). Provides `readyNodes()` (topo frontier of independent
   nodes), `wouldCreateCycle(edge)`, `markProcessed`, serialization for memory,
@@ -161,6 +168,15 @@ Changed:
 On re-reference, the known graph seeds the scheduler; every node still passes
 `filterScope` each run (scopes may have tightened since).
 
+**Edges vs parallelism.** Edges are kept even though independent repos run in
+parallel — they are not redundant with it, they *define* it. Two repos run in
+parallel precisely when there is no path between them; an edge is exactly the
+ordering constraint that forbids parallelism. So independent repos are
+represented by the *absence* of an edge, not by dropping edges from the schema.
+Persisting edges also lets a re-run reproduce the dependency-ordered report and
+schedule without re-discovering structure. (If a ticket's repos turn out fully
+independent, `edges` is simply `[]`.)
+
 ## Config additions (example)
 
 ```json
@@ -169,14 +185,32 @@ On re-reference, the known graph seeds the scheduler; every node still passes
   "learnedReposPath": "./learned-repos.json",
   "maxRepos": 10,
   "worktree": {
-    "command": "wt switch {{ticket}}",
-    "cwdTemplate": "{{repoPath}}/../{{repoBase}}.{{ticket}}"
+    "script": "scripts/worktree-provision.worktrunk.sh"
   }
 }
 ```
 
-`worktree.command` runs with `cwd = repoPath`; swapping to plain git is a config
-change (e.g. `git worktree add ../{{repoBase}}.{{ticket}} -b {{ticket}}`).
+`config.worktree.script` **selects** which script nagi runs — switching
+mechanisms is a config edit, never a file edit. The repo ships a couple of
+example scripts (worktrunk, plain git) under `scripts/`; point the config value
+at one of them or at your own. The selected script is invoked with
+`cwd = repoPath`, `argv[1] = ticket`, and `NAGI_TICKET` / `NAGI_REPO_PATH` in the
+environment. It must create or switch to the worktree and print its absolute
+path as the final stdout line. The worktrunk example:
+
+```sh
+#!/usr/bin/env bash
+# scripts/worktree-provision.worktrunk.sh — example provisioner (worktrunk).
+set -euo pipefail
+ticket="${1:?ticket required}"
+wt switch "$ticket" >&2          # worktrunk creates ../<repoBase>.<ticket>
+# worktrunk's path = {{repo_path}}/../{{repo}}.{{branch|sanitize}}
+base="$(basename "$PWD")"
+printf '%s\n' "$(cd "$PWD/../${base}.${ticket}" && pwd)"
+```
+
+Swapping to plain git is just a different script
+(`git worktree add ../<repoBase>.<ticket> -b <ticket>` then echo the path).
 
 ## Error handling & security
 
@@ -198,7 +232,8 @@ change (e.g. `git worktree add ../{{repoBase}}.{{ticket}} -b {{ticket}}`).
 - `listScopedRepos` — `ghq` mocked; scope filtering; ghq-absent error.
 - `RepoGraph` — `readyNodes` frontier, parallel-ready independence,
   `wouldCreateCycle` true/false, topo order, serialization.
-- `CommandTemplateProvisioner` — template expansion; command runner mocked.
+- `ScriptProvisioner` — argv/env passed correctly; reads back last stdout line
+  as cwd; non-zero exit -> guard error; script runner mocked.
 - `resolve-and-schedule` — `wf.agent` mocked to drive: memory hit/miss,
   out-of-scope rejection, single repo, multi-repo fan-out (parallel batch),
   dynamic discovery across levels, cycle halt, maxRepos halt.
