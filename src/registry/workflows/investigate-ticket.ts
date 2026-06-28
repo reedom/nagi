@@ -2,7 +2,7 @@
 import { z } from 'zod';
 import type { WorkflowApi, WorkflowModule } from 'ai-workflow-engine';
 import type { NagiConfig } from '../../config.js';
-import type { RegistryEntry } from '../types.js';
+import type { RegistryEntry, WorkflowFactory } from '../types.js';
 import { RepoMemory } from '../../repo/memory.js';
 import { ScriptProvisioner } from '../../repo/worktree.js';
 import { listScopedRepos } from '../../repo/ghq.js';
@@ -34,6 +34,8 @@ function makeModule(config: NagiConfig): WorkflowModule {
     },
   };
 }
+
+export const investigateTicket: WorkflowFactory = (ctx) => makeInvestigateTicketEntry(ctx.config);
 
 export function makeInvestigateTicketEntry(config: NagiConfig): RegistryEntry {
   return {
