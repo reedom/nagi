@@ -8,3 +8,7 @@ nagi.config.json
 audit.jsonl
 
 .lavish/
+
+# superpowers / gstack temp planning + scratch (never tracked)
+docs/superpowers/
+.superpowers/
