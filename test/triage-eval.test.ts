@@ -42,7 +42,6 @@ describe.skipIf(!live)('triage live eval', () => {
     adapter: makeClaudeAdapter(),
     policy: config.triage,
     registry,
-    aliases: [] as string[],
     log: recordingLogger(),
   };
 

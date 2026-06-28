@@ -9,7 +9,7 @@ export class RepoMemory {
   static load(path: string): RepoMemory {
     try {
       const parsed = JSON.parse(readFileSync(path, 'utf8')) as RepoMemoryData;
-      if (parsed.version === 1) return new RepoMemory(path, parsed);
+      if (parsed.version === 1 && parsed.tickets != null && parsed.aliases != null) return new RepoMemory(path, parsed);
     } catch {
       // Missing or corrupt file -> start empty; we never throw on read.
     }

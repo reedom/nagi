@@ -37,7 +37,7 @@ function harness(triageData: Array<Record<string, unknown>>, runWorkflowFn?: Run
   const dispatcher = new Dispatcher({
     config,
     registry,
-    triage: { adapter, policy: config.triage, registry, aliases: [], log: silentLogger },
+    triage: { adapter, policy: config.triage, registry, log: silentLogger },
     adapters: { claude: adapter, codex: adapter },
     audit,
     queue,

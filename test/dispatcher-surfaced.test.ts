@@ -47,7 +47,7 @@ function surfaceHarness() {
   const dispatcher = new Dispatcher({
     config,
     registry,
-    triage: { adapter: triageAdapter, policy: config.triage, registry, aliases: [], log: silentLogger },
+    triage: { adapter: triageAdapter, policy: config.triage, registry, log: silentLogger },
     adapters: { claude: triageAdapter, codex: triageAdapter },
     audit,
     queue,

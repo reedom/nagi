@@ -1,6 +1,6 @@
 // test/repo/resolve-and-schedule.test.ts
 import { describe, expect, it } from 'vitest';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { RepoMemory } from '../../src/repo/memory.js';
@@ -106,5 +106,51 @@ describe('resolveAndSchedule', () => {
     });
     const r = await resolveAndSchedule(wf, 'DEA-5', deps({ memory }));
     expect(r.graph.nodes).not.toContain('/ghq/github.com/evil/x');
+  });
+
+  it('rejects a fabricated in-scope-but-not-in-ghq path returned by the identify agent', async () => {
+    // '/ghq/github.com/acme/fabricated' passes scope check but is NOT in listRepos.
+    const wf = fakeWf({
+      identify: [{ repos: ['/ghq/github.com/acme/fabricated'] }],
+    });
+    const r = await resolveAndSchedule(wf, 'DEA-6', deps({}));
+    expect(r.graph.nodes).not.toContain('/ghq/github.com/acme/fabricated');
+    expect(r.graph.nodes).toHaveLength(0);
+  });
+
+  it('restores edges when seeding from memory', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'nagi-sched-'));
+    const memory = RepoMemory.load(join(dir, 'm3.json'));
+    // Pre-seed memory with a two-node graph that has an edge.
+    memory.remember('DEA-7', {
+      nodes: ['/ghq/github.com/acme/app', '/ghq/github.com/acme/engine'],
+      edges: [{ from: '/ghq/github.com/acme/app', to: '/ghq/github.com/acme/engine', reason: 'calls engine' }],
+    });
+    const wf = fakeWf({
+      // engine has no deps, app depends on engine (already in graph as edge)
+      investigate: [
+        { findings: 'engine ok', dependencies: [] },
+        { findings: 'app ok', dependencies: [] },
+      ],
+    });
+    const r = await resolveAndSchedule(wf, 'DEA-7', deps({ memory }));
+    expect(r.graph.edges).toHaveLength(1);
+    expect(r.graph.edges[0]).toMatchObject({ from: '/ghq/github.com/acme/app', to: '/ghq/github.com/acme/engine' });
+  });
+
+  it('does not persist graph to memory when halted', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'nagi-sched-'));
+    const memory = RepoMemory.load(join(dir, 'm4.json'));
+    const wf = fakeWf({
+      identify: [{ repos: ['/ghq/github.com/acme/app'] }],
+      investigate: [
+        { findings: 'a', dependencies: [{ repo: '/ghq/github.com/acme/engine', reason: 'a->e' }] },
+        { findings: 'e', dependencies: [{ repo: '/ghq/github.com/acme/app', reason: 'e->a (cycle)' }] },
+      ],
+    });
+    const r = await resolveAndSchedule(wf, 'DEA-8', deps({ memory }));
+    expect(r.halted?.reason).toBe('cycle');
+    // The graph must NOT have been written to memory.
+    expect(RepoMemory.load(join(dir, 'm4.json')).get('DEA-8')).toBeUndefined();
   });
 });
