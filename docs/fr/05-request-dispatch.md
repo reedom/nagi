@@ -63,9 +63,9 @@ A thread reply is consumed by its pending clarification if one is still live; ot
 | `triage.confidence < config.triage.confidenceThreshold` | `clarify` listing the workflow menu |
 | `registry.get(triage.workflowId)` is missing (unknown id) | `clarify` listing the workflow menu |
 | `entry.argsSchema.safeParse(triage.args)` fails | `clarify` naming the bad field |
-| all pass | `dispatch` with `entry`, parsed `args`, resolved `cwd`, and `budget` |
+| all pass | `dispatch` with `entry`, parsed `args`, and `budget` |
 
-The clarification wording is grounded in source: the menu question (`chooseWorkflowQuestion`) lists each `id` + `description`; the schema question (`schemaQuestion`) reports the first failing field, and for `repo` specifically lists the valid aliases (or `(none configured)`). On a `dispatch`, `cwd` is derived from the `repo` arg via `config.repos`, and `budget = entry.budgetOverride ?? config.defaultBudget`.
+The clarification wording is grounded in source: the menu question (`chooseWorkflowQuestion`) lists each `id` + `description`; the schema question (`schemaQuestion`) reports the first failing field. On a `dispatch`, `budget = entry.budgetOverride ?? config.defaultBudget`; cwd is not resolved at this stage — repo-aware workflows set cwd per-agent after resolving the target repo.
 
 When `process()` gets a `clarify`, it stores `{ originalText: text, question }` in the thread store, posts the question, and records `clarification` (carrying `triage.workflowId` and `triage.args`). The next in-thread reply re-runs triage with the original text plus the `[follow-up]` line appended (the merge step above).
 

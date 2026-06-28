@@ -16,6 +16,14 @@ refs:
     - src/registry/workflows/review-repo.ts
     - src/registry/workflows/research.ts
     - src/registry/workflows/approval-demo.ts
+    - src/registry/workflows/investigate-ticket.ts
+    - src/registry/workflows/steps/resolve-and-schedule.ts
+    - src/repo/scope.ts
+    - src/repo/ghq.ts
+    - src/repo/memory.ts
+    - src/repo/graph.ts
+    - src/repo/worktree.ts
+    - src/repo/types.ts
 ---
 
 # FR 04: Workflow Registry
@@ -45,29 +53,31 @@ Embedding a live `WorkflowModule` (decision 2A) means hand-written entries and f
 
 ### Factories and construction
 
-Entries are not static objects; they are produced by an `EntryFactory = (aliases: string[]) => RegistryEntry`. This lets each arg schema enumerate the live repo-alias list at build time. `index.ts` holds the seed list and the assembler:
+Entries are not static objects; they are produced by an `EntryFactory = () => RegistryEntry`. `index.ts` holds the seed list and the assembler:
 
 ```ts
 export const SEED_FACTORIES: EntryFactory[] = [reviewRepoEntry, researchEntry, surfaceEntry];
 
 export function makeRegistry(config: NagiConfig): Registry {
-  const factories =
+  const seed =
     process.env['NAGI_ENABLE_APPROVAL_DEMO'] === '1'
       ? [...SEED_FACTORIES, approvalDemoEntry]
       : SEED_FACTORIES;
-  return buildRegistry(factories, repoAliases(config));
+  const base = buildRegistry(seed);
+  return new Registry([...base.list(), makeInvestigateTicketEntry(config)]);
 }
 ```
 
-`buildRegistry` calls each factory with `repoAliases(config)` and wraps the results in a `Registry` (an id-keyed map exposing `get`, `has`, `ids`, `list`). The `approval-demo` entry is opt-in via `NAGI_ENABLE_APPROVAL_DEMO=1` so it never competes for triage in normal use.
+`buildRegistry` calls each factory (zero-arg) and wraps the results in a `Registry` (an id-keyed map exposing `get`, `has`, `ids`, `list`). The `investigate-ticket` entry requires `config` (for `repoScopes`, `learnedReposPath`, `maxRepos`, and `worktree.script`) and is added directly after the seed set. The `approval-demo` entry is opt-in via `NAGI_ENABLE_APPROVAL_DEMO=1` so it never competes for triage in normal use.
 
-### Repo-alias enum in arg schemas (D13)
+### Repo arguments are free-form
 
-Repo references are a configured alias map (name → absolute path), never free-form paths — free-form paths are unrepresentable in arg schemas. `repoEnum(aliases)` builds the constraint: a `z.enum` over the configured alias names, or, when no repos are configured, a string schema that always fails with `'no repos are configured'`. Aliases and the path map come from configuration ([10-configuration](10-configuration.md)).
+Repo references in workflow arg schemas are free-form strings (`z.string()`), not a `z.enum` over a configured alias map. The `repoHint` arg in `review-repo` and the `ticketRef`/`repoHint` args in `investigate-ticket` carry whatever the user typed; the actual repo path is resolved at runtime by the workflow via `ghq list` filtered through the `repoScopes` allowlist in configuration ([10-configuration](10-configuration.md)).
 
 ### Shipped seed workflows
 
-- **review-repo** (`workflows/review-repo.ts`): "Review a known repository (or its working diff) and summarize the most important risks." Args: `repo` (alias enum), `scope` (`'repo' | 'diff'`, default `'repo'`), optional `focus`. The module runs one read-only review agent (`Bash`, `Read`, `Grep`, `Glob`). The repo alias resolves to a run-level cwd set by the dispatcher; the module itself only describes the work.
+- **review-repo** (`workflows/review-repo.ts`): "Review a repository (or its working diff) and summarize the most important risks." Args: `repoHint` (free-form string — the agent locates the repo using its tools), `scope` (`'repo' | 'diff'`, default `'repo'`), optional `focus`. The module runs one read-only review agent (`Bash`, `Read`, `Grep`, `Glob`) that locates the repo from the hint and cds into it.
+- **investigate-ticket** (`workflows/investigate-ticket.ts`): "Investigate a ticket end-to-end: find the starting repo, root-cause it, and follow repo-to-repo dependencies." Args: `ticketRef` (required non-empty string, e.g. `DEA-1234`), `repoHint` (optional). The module reads the ticket via the agent's ambient MCP/skills, identifies starting repos from the scope-filtered `ghq list` candidate set, provisions a worktree per repo via `config.worktree.script`, investigates each repo, follows repo-to-repo dependencies as a DAG (independent nodes run in parallel; edges enforce ordering), halts on a dependency cycle (escalate to human) or `maxRepos` limit, and persists the resolved ticket→graph to `config.learnedReposPath`. The DAG scheduling logic lives in `steps/resolve-and-schedule.ts`.
 - **research** (`workflows/research.ts`): "Research an open question from multiple angles and synthesize an answer." Args: `question` (non-empty string). The module fans out three angle agents in parallel, then synthesizes — chosen for mechanism coverage (approval serialization and budget under real concurrency), not topic.
 - **approval-demo** (`workflows/approval-demo.ts`): a deliberate test affordance with empty args (`z.object({})`). The agent is granted no tools but told it must run `date -u`, forcing a tool escalation so the Approve/Deny round-trip ([08-escalation-approvals](08-escalation-approvals.md)) can be exercised. Opt-in only.
 
@@ -76,25 +86,26 @@ The `surface` entry (`workflows/surface.ts`) is also seeded and carries `surface
 ### How the registry feeds triage and dispatch
 
 - **Triage** builds its system prompt fresh from the live registry, listing each entry's `id`, `description`, and a readable rendering of `argsSchema` (`src/triage/prompt.ts`). Descriptions are therefore load-bearing selection text.
-- **Dispatch** resolves `decide()` (`src/dispatcher/decide.ts`): it looks up `registry.get(triage.workflowId)`, validates `triage.args` with `entry.argsSchema.safeParse`, derives `cwd` from the `repo` arg via `config.repos`, and sets `budget = entry.budgetOverride ?? config.defaultBudget`. An unknown id or a schema failure collapses to a single clarification path (4A). `surfaced` entries are routed to the surfaced lane by the dispatcher.
+- **Dispatch** resolves `decide()` (`src/dispatcher/decide.ts`): it looks up `registry.get(triage.workflowId)`, validates `triage.args` with `entry.argsSchema.safeParse`, and sets `budget = entry.budgetOverride ?? config.defaultBudget`. No cwd is resolved here — repo-aware workflows resolve their per-agent working directory after identifying the target repo. An unknown id or a schema failure collapses to a single clarification path (4A). `surfaced` entries are routed to the surfaced lane by the dispatcher.
 
 ## Capabilities
 
 - Declare a workflow once as a description + zod arg schema + executable `WorkflowModule`.
-- Constrain repo arguments to configured aliases via `repoEnum` (D13).
+- Repo arguments are free-form strings resolved at runtime by the workflow; no static alias enum is required.
 - Override the per-entry token budget, otherwise inherit the configured default (3A).
 - Mark an entry `surfaced` to opt into the concurrent surfaced lane.
 - Toggle the approval-demo entry on via an environment flag without touching the seed list.
+- `investigate-ticket`: agent-driven, ticket-first repo discovery with DAG scheduling, parallel independent node execution, cycle detection, and memory persistence.
 
 ## Boundaries
 
 - No runtime registration API: the seed set is hand-edited in `index.ts`; there is no add/remove at runtime.
 - The foundry (auto-authoring / compose-on-the-fly workflows) is v2 and deferred.
-- The registry does not execute, schedule, queue, or budget-enforce; it only describes. Validation, cwd resolution, lane routing, and budget application happen in dispatch ([05-request-dispatch](05-request-dispatch.md)).
-- Repo path resolution (alias → absolute path) lives in configuration; the registry only knows alias names.
+- The registry does not execute, schedule, queue, or budget-enforce; it only describes. Validation, lane routing, and budget application happen in dispatch ([05-request-dispatch](05-request-dispatch.md)).
+- Repo resolution (free-form hint → absolute path) is performed at runtime inside each workflow via `src/repo/` utilities; the registry does not hold or resolve repo paths.
 
 ## Traceability
 
-- **Design**: see `docs/tohru.hanai-main-design-20260611-235421.md` — decision 2A (registry entries embed a real `WorkflowModule`; generated and hand-written entries share one format), 3A (default per-request budget with per-entry override), and D13 (repo references as a configured alias map; free-form paths unrepresentable).
-- **Modules**: `src/registry/index.ts`, `src/registry/types.ts`, `src/registry/workflows/review-repo.ts`, `src/registry/workflows/research.ts`, `src/registry/workflows/approval-demo.ts`.
-- **Related FR**: [03-triage](03-triage.md) consumes entry descriptions and schemas to select a workflow; [05-request-dispatch](05-request-dispatch.md) validates args, resolves cwd, and applies the budget; [12-agentbus-surfaced-lane](12-agentbus-surfaced-lane.md) handles `surfaced: true` entries; [10-configuration](10-configuration.md) supplies repo aliases and the default budget.
+- **Design**: see `docs/tohru.hanai-main-design-20260611-235421.md` — decision 2A (registry entries embed a real `WorkflowModule`; generated and hand-written entries share one format) and 3A (default per-request budget with per-entry override); and `docs/superpowers/specs/2026-06-28-conversational-repo-resolution-design.md` — R3 (resolution lives in the dispatched workflow), R4 (triage extracts free-form `ticketRef`/`repoHint`; the static repo enum is retired), R6–R10 (DAG scheduling, parallelism, cycle halt, maxRepos cap).
+- **Modules**: `src/registry/index.ts`, `src/registry/types.ts`, `src/registry/workflows/review-repo.ts`, `src/registry/workflows/research.ts`, `src/registry/workflows/approval-demo.ts`, `src/registry/workflows/investigate-ticket.ts`, `src/registry/workflows/steps/resolve-and-schedule.ts`, `src/repo/scope.ts`, `src/repo/ghq.ts`, `src/repo/memory.ts`, `src/repo/graph.ts`, `src/repo/worktree.ts`, `src/repo/types.ts`.
+- **Related FR**: [03-triage](03-triage.md) consumes entry descriptions and schemas to select a workflow; [05-request-dispatch](05-request-dispatch.md) validates args and applies the budget; [12-agentbus-surfaced-lane](12-agentbus-surfaced-lane.md) handles `surfaced: true` entries; [10-configuration](10-configuration.md) supplies `repoScopes`, `learnedReposPath`, `maxRepos`, `worktree.script`, and the default budget.
