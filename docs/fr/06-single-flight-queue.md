@@ -73,6 +73,6 @@ For a `surfaced` workflow the dispatcher's queue job returns as soon as the run 
 
 ## Traceability
 
-- **Design**: see `docs/tohru.hanai-main-design-20260611-235421.md` — decision 6A (crash recovery is fail-fast + launchd `KeepAlive`; in-memory queue loss on restart is accepted, audit-log replay deferred to v1.5) and D12 (the `status`/`cancel` control commands bypass the workflow queue). Approach A documents single-flight as the chosen v1 policy, with the persistent queue and N-concurrency belonging to Approach B (v1.5).
+- **Design decisions**: 6A (crash recovery is fail-fast + launchd `KeepAlive`; in-memory queue loss on restart is accepted, audit-log replay deferred to v1.5) and D12 (the `status`/`cancel` control commands bypass the workflow queue). Approach A documents single-flight as the chosen v1 policy, with the persistent queue and N-concurrency belonging to Approach B (v1.5).
 - **Modules**: `src/dispatcher/queue.ts`.
 - **Related FR**: [05-request-dispatch](05-request-dispatch.md) builds queue jobs and turns the admission result into the in-thread reply; [07-control-commands](07-control-commands.md) reads the queue via `status()` and drains it via `clearPending()`; [12-agentbus-surfaced-lane](12-agentbus-surfaced-lane.md) explains why surfaced runs free the active slot on launch.

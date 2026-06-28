@@ -140,12 +140,7 @@ in the consumer `decide()` in [05-request-dispatch](05-request-dispatch.md).
 
 ## Traceability
 
-- **Design**: `docs/tohru.hanai-main-design-20260611-235421.md` (archival) — the
-  `triage/` component as a direct single adapter call returning
-  `{workflowId, args, confidence, clarificationQuestion?}` (architecture sketch);
-  the folded Codex amendment "Triage gets its own explicit runtime policy:
-  model, timeout, token cap, escalation disabled"; the clarification path (4A)
-  and triage eval suite (7A); README.md "Triage" / "Triage eval".
+- **Design decisions**: the `triage/` component as a direct single adapter call returning `{workflowId, args, confidence, clarificationQuestion?}` (architecture sketch); the folded Codex amendment "Triage gets its own explicit runtime policy: model, timeout, token cap, escalation disabled"; the clarification path (4A) and triage eval suite (7A); README.md "Triage" / "Triage eval".
 - **Modules**: `src/triage/` (`triage.ts` `runTriage`/`TriageDeps`,
   `schema.ts` `triageJsonSchema`/`triageResultSchema`/`TriageResult`,
   `prompt.ts` `buildTriagePrompt`/`buildTriageUserPrompt`, `describe.ts`

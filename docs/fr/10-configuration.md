@@ -90,6 +90,6 @@ When `cmux` is omitted, the host runs `cmux` with no `--socket`/`--password` and
 
 ## Traceability
 
-- **Design**: see `docs/tohru.hanai-main-design-20260611-235421.md` — D14 (append-only JSONL audit log plus team-ID pin and user allowlist; the audit trail records identities, not credentials, which is why secrets stay in the environment); and `docs/superpowers/specs/2026-06-28-conversational-repo-resolution-design.md` — R2 (scope allowlist as the security boundary), R5 (learned-repos JSON persistence), R8 (swappable worktree provisioner script), R10 (`maxRepos` cap).
+- **Design decisions**: D14 (append-only JSONL audit log plus team-ID pin and user allowlist; the audit trail records identities, not credentials, which is why secrets stay in the environment); R2 (scope allowlist as the security boundary), R5 (learned-repos JSON persistence), R8 (swappable worktree provisioner script), R10 (`maxRepos` cap).
 - **Modules**: `src/config.ts` (`configSchema`/`NagiConfig`, `loadConfig`, `loadSecrets`), `src/util/env.ts` (`loadDotenv`).
 - **Related FR**: [02-authorization](02-authorization.md) consumes `slack.allowedTeamId`/`allowedUserIds`; [03-triage](03-triage.md) consumes the `triage.*` block; [04-workflow-registry](04-workflow-registry.md) consumes `repoScopes`, `learnedReposPath`, `maxRepos`, `worktree.script`, and `defaultBudget`; [11-daemon-lifecycle](11-daemon-lifecycle.md) loads config/secrets at startup and is the unit restarted to apply changes.
