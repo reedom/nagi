@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { WorkflowApi, WorkflowModule } from 'ai-workflow-engine';
-import type { EntryFactory, RegistryEntry } from '../types.js';
+import type { WorkflowFactory, RegistryEntry } from '../types.js';
 
 // A deliberate test affordance: the agent is granted NO tools, but is told it
 // must run a shell command. The first tool attempt is not pre-authorized, so
@@ -25,7 +25,7 @@ const demoModule: WorkflowModule = {
   },
 };
 
-export const approvalDemoEntry: EntryFactory = (): RegistryEntry => ({
+export const approvalDemoEntry: WorkflowFactory = (): RegistryEntry => ({
   id: 'approval-demo',
   description:
     'Run a harmless command (`date -u`) that requires tool approval, to test the ' +

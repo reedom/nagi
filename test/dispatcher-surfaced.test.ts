@@ -2,19 +2,20 @@ import { describe, expect, it, vi } from 'vitest';
 import type { AgentResult, CliAdapter, RunOptions, WorkflowModule } from 'ai-workflow-engine';
 import { Dispatcher } from '../src/dispatcher/dispatcher.js';
 import { WorkQueue } from '../src/dispatcher/queue.js';
-import { makeRegistry } from '../src/registry/index.js';
+import { buildRegistry } from '../src/registry/index.js';
 import { makeThreadStore } from '../src/thread-state.js';
 import { ApprovalRegistry } from '../src/escalation/approval-registry.js';
 import { PendingRuns } from '../src/agentbus-bridge/pending-runs.js';
 import { ResidentSessions } from '../src/residents/resident-sessions.js';
 import type { RequestContext } from '../src/types.js';
 import { fakeAdapter, recordingAudit, recordingReplier, silentLogger, testConfig, tick } from './helpers.js';
+import { reviewRepo, research, surface, investigateTicket } from '../src/workflows/index.js';
 
 type RunFn = (mod: WorkflowModule, opts: RunOptions) => Promise<unknown>;
 
 function surfaceHarness() {
   const config = testConfig();
-  const registry = makeRegistry(config);
+  const registry = buildRegistry([reviewRepo, research, surface, investigateTicket], { config });
   const audit = recordingAudit();
   const queue = new WorkQueue(silentLogger);
   const threadStore = makeThreadStore();

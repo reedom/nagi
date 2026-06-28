@@ -1,13 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { makeClaudeAdapter } from 'ai-workflow-engine';
-import { makeRegistry } from '../src/registry/index.js';
+import { buildRegistry } from '../src/registry/index.js';
 import { runTriage } from '../src/triage/triage.js';
 import { decide } from '../src/dispatcher/decide.js';
 import { recordingLogger, testConfig } from './helpers.js';
 import { triageCases, type CaseExpectation } from './fixtures/triage-cases.js';
+import { reviewRepo, research, surface, investigateTicket } from '../src/workflows/index.js';
 
 const config = testConfig();
-const registry = makeRegistry(config);
+const registry = buildRegistry([reviewRepo, research, surface, investigateTicket], { config });
 
 function isDispatch(e: CaseExpectation): e is { workflowId: string } {
   return 'workflowId' in e;

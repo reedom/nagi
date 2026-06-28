@@ -1,13 +1,13 @@
-import { E as EntryFactory, W as WorkflowFactory, c as WorkflowApi } from '../types-DWQjEzd2.js';
+import { W as WorkflowFactory, c as WorkflowApi } from '../types-OJquXB_7.js';
 import 'zod';
 
-declare const reviewRepoEntry: EntryFactory;
+declare const reviewRepoEntry: WorkflowFactory;
 
-declare const researchEntry: EntryFactory;
+declare const researchEntry: WorkflowFactory;
 
-declare const surfaceEntry: EntryFactory;
+declare const surfaceEntry: WorkflowFactory;
 
-declare const approvalDemoEntry: EntryFactory;
+declare const approvalDemoEntry: WorkflowFactory;
 
 declare const investigateTicket: WorkflowFactory;
 

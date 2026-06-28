@@ -208,7 +208,5 @@ interface NagiContext {
     config: NagiConfig;
 }
 type WorkflowFactory = (ctx: NagiContext) => RegistryEntry;
-/** @deprecated Use WorkflowFactory instead. */
-type EntryFactory = WorkflowFactory;
 
-export { type AgentOptions as A, type CliAdapter as C, type EntryFactory as E, type NagiConfig as N, type RegistryEntry as R, type WorkflowFactory as W, type AgentResult as a, type NagiContext as b, type WorkflowApi as c, type WorkflowModule as d, loadConfig as l, parseConfig as p };
+export { type AgentOptions as A, type CliAdapter as C, type NagiConfig as N, type RegistryEntry as R, type WorkflowFactory as W, type AgentResult as a, type NagiContext as b, type WorkflowApi as c, type WorkflowModule as d, loadConfig as l, parseConfig as p };

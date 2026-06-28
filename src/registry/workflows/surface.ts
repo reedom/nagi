@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { WorkflowApi, WorkflowModule } from 'ai-workflow-engine';
-import type { EntryFactory, RegistryEntry } from '../types.js';
+import type { WorkflowFactory, RegistryEntry } from '../types.js';
 
 interface SurfaceArgs {
   task: string;
@@ -18,7 +18,7 @@ const surfaceModule: WorkflowModule = {
   },
 };
 
-export const surfaceEntry: EntryFactory = (): RegistryEntry => ({
+export const surfaceEntry: WorkflowFactory = (): RegistryEntry => ({
   id: 'surface',
   description:
     'Run a task as an interactive agent on a visible cmux surface (you can watch and intervene). ' +

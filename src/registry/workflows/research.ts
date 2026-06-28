@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { WorkflowApi, WorkflowModule } from 'ai-workflow-engine';
-import type { EntryFactory, RegistryEntry } from '../types.js';
+import type { WorkflowFactory, RegistryEntry } from '../types.js';
 
 // Seed workflow #2: a small parallel research pipeline. Chosen for mechanism
 // coverage, not topic: the fan-out exercises approval serialization (1A) and
@@ -42,7 +42,7 @@ const researchModule: WorkflowModule = {
   },
 };
 
-export const researchEntry: EntryFactory = (): RegistryEntry => ({
+export const researchEntry: WorkflowFactory = (): RegistryEntry => ({
   id: 'research',
   description:
     'Research an open question from multiple angles and synthesize an answer. ' +
