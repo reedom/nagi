@@ -1,8 +1,8 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { join } from 'node:path';
 
 const offenders = ['ai-workflow-engine', 'agent-surface-adapters'];
 const jsFiles = ['dist/index.js', 'dist/workflows/index.js', 'dist/cli.js'];
-const dtsFiles = ['dist/index.d.ts', 'dist/workflows/index.d.ts', 'dist/cli.d.ts'];
 let bad = false;
 
 for (const f of jsFiles) {
@@ -15,6 +15,23 @@ for (const f of jsFiles) {
     }
   }
 }
+
+// Collect all *.d.ts files under dist/ recursively so that bundled type
+// chunks (e.g. dist/types-*.d.ts) are also checked, not just entry points.
+function collectDts(dir) {
+  const results = [];
+  for (const entry of readdirSync(dir)) {
+    const full = join(dir, entry);
+    if (statSync(full).isDirectory()) {
+      results.push(...collectDts(full));
+    } else if (entry.endsWith('.d.ts')) {
+      results.push(full);
+    }
+  }
+  return results;
+}
+
+const dtsFiles = collectDts('dist');
 
 for (const f of dtsFiles) {
   const src = readFileSync(f, 'utf8');

@@ -74,6 +74,13 @@ var logger = {
   error: (msg, meta) => emit("error", msg, meta)
 };
 
+// src/util/env.ts
+import { existsSync } from "fs";
+function loadDotenv(path = process.env["NAGI_ENV_FILE"] ?? ".env") {
+  if (!existsSync(path)) return;
+  process.loadEnvFile(path);
+}
+
 // node_modules/.pnpm/ai-workflow-engine@file+..+ai-workflow-engine/node_modules/ai-workflow-engine/dist/runtime/runner.js
 import { statSync } from "fs";
 import { resolve as resolve2 } from "path";
@@ -848,7 +855,7 @@ function writeApprovalSettings(input) {
 }
 
 // node_modules/.pnpm/agent-surface-adapters@file+..+agent-surface-adapters/node_modules/agent-surface-adapters/dist/agents/claude/result.js
-import { existsSync, readdirSync, readFileSync as readFileSync3 } from "fs";
+import { existsSync as existsSync2, readdirSync, readFileSync as readFileSync3 } from "fs";
 import { homedir as homedir3 } from "os";
 import { join as join7 } from "path";
 function projectsBase(deps) {
@@ -856,11 +863,11 @@ function projectsBase(deps) {
 }
 function findTranscript(sessionId, deps = {}) {
   const base = projectsBase(deps);
-  if (!existsSync(base))
+  if (!existsSync2(base))
     return null;
   for (const dir of readdirSync(base)) {
     const candidate = join7(base, dir, `${sessionId}.jsonl`);
-    if (existsSync(candidate))
+    if (existsSync2(candidate))
       return candidate;
   }
   return null;
@@ -1937,13 +1944,6 @@ function newId(prefix) {
   return `${prefix}_${randomUUID2().slice(0, 8)}`;
 }
 
-// src/util/env.ts
-import { existsSync as existsSync2 } from "fs";
-function loadDotenv(path = process.env["NAGI_ENV_FILE"] ?? ".env") {
-  if (!existsSync2(path)) return;
-  process.loadEnvFile(path);
-}
-
 // src/create-nagi.ts
 var SWEEP_INTERVAL_MS = 5 * 60 * 1e3;
 var SURFACE_CEILING_MS = 30 * 60 * 1e3;
@@ -2078,5 +2078,6 @@ export {
   parseConfig,
   loadConfig,
   logger,
+  loadDotenv,
   createNagi
 };

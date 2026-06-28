@@ -2,7 +2,7 @@ import {
   createNagi,
   loadConfig,
   parseConfig
-} from "./chunk-QTKKOG33.js";
+} from "./chunk-HEDCOLKS.js";
 export {
   createNagi,
   loadConfig,
