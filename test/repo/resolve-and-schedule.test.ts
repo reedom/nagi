@@ -44,7 +44,7 @@ describe('resolveAndSchedule', () => {
         { findings: 'engine cause', dependencies: [] },
       ],
     });
-    const r = await resolveAndSchedule(wf, 'DEA-1', deps({}));
+    const r = await resolveAndSchedule(wf, 'ABC-1', deps({}));
     expect(r.halted).toBeUndefined();
     expect(r.graph.nodes).toContain('/ghq/github.com/acme/engine');
     expect(r.findings.map((f) => f.findings).sort()).toEqual(['app cause', 'engine cause']);
@@ -55,7 +55,7 @@ describe('resolveAndSchedule', () => {
       identify: [{ repos: ['/ghq/github.com/acme/app'] }],
       investigate: [{ findings: 'x', dependencies: [{ repo: '/ghq/github.com/evil/x', reason: 'no' }] }],
     });
-    const r = await resolveAndSchedule(wf, 'DEA-2', deps({}));
+    const r = await resolveAndSchedule(wf, 'ABC-2', deps({}));
     expect(r.graph.nodes).not.toContain('/ghq/github.com/evil/x');
   });
 
@@ -67,7 +67,7 @@ describe('resolveAndSchedule', () => {
         { findings: 'e', dependencies: [{ repo: '/ghq/github.com/acme/app', reason: 'e->a (cycle)' }] },
       ],
     });
-    const r = await resolveAndSchedule(wf, 'DEA-3', deps({}));
+    const r = await resolveAndSchedule(wf, 'ABC-3', deps({}));
     expect(r.halted?.reason).toBe('cycle');
   });
 
@@ -87,7 +87,7 @@ describe('resolveAndSchedule', () => {
         },
       },
     });
-    const r = await resolveAndSchedule(wf, 'DEA-4', d);
+    const r = await resolveAndSchedule(wf, 'ABC-4', d);
     expect(r.halted).toBeUndefined();
     const failed = r.findings.find((f) => f.repo === '/ghq/github.com/acme/app');
     expect(failed).toBeDefined();
@@ -97,14 +97,14 @@ describe('resolveAndSchedule', () => {
   it('filters out-of-scope nodes when seeding from memory', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'nagi-sched-'));
     const memory = RepoMemory.load(join(dir, 'm2.json'));
-    memory.remember('DEA-5', {
+    memory.remember('ABC-5', {
       nodes: ['/ghq/github.com/acme/app', '/ghq/github.com/evil/x'],
       edges: [],
     });
     const wf = fakeWf({
       investigate: [{ findings: 'ok', dependencies: [] }],
     });
-    const r = await resolveAndSchedule(wf, 'DEA-5', deps({ memory }));
+    const r = await resolveAndSchedule(wf, 'ABC-5', deps({ memory }));
     expect(r.graph.nodes).not.toContain('/ghq/github.com/evil/x');
   });
 
@@ -113,7 +113,7 @@ describe('resolveAndSchedule', () => {
     const wf = fakeWf({
       identify: [{ repos: ['/ghq/github.com/acme/fabricated'] }],
     });
-    const r = await resolveAndSchedule(wf, 'DEA-6', deps({}));
+    const r = await resolveAndSchedule(wf, 'ABC-6', deps({}));
     expect(r.graph.nodes).not.toContain('/ghq/github.com/acme/fabricated');
     expect(r.graph.nodes).toHaveLength(0);
   });
@@ -122,7 +122,7 @@ describe('resolveAndSchedule', () => {
     const dir = mkdtempSync(join(tmpdir(), 'nagi-sched-'));
     const memory = RepoMemory.load(join(dir, 'm3.json'));
     // Pre-seed memory with a two-node graph that has an edge.
-    memory.remember('DEA-7', {
+    memory.remember('ABC-7', {
       nodes: ['/ghq/github.com/acme/app', '/ghq/github.com/acme/engine'],
       edges: [{ from: '/ghq/github.com/acme/app', to: '/ghq/github.com/acme/engine', reason: 'calls engine' }],
     });
@@ -133,7 +133,7 @@ describe('resolveAndSchedule', () => {
         { findings: 'app ok', dependencies: [] },
       ],
     });
-    const r = await resolveAndSchedule(wf, 'DEA-7', deps({ memory }));
+    const r = await resolveAndSchedule(wf, 'ABC-7', deps({ memory }));
     expect(r.graph.edges).toHaveLength(1);
     expect(r.graph.edges[0]).toMatchObject({ from: '/ghq/github.com/acme/app', to: '/ghq/github.com/acme/engine' });
   });
@@ -148,9 +148,9 @@ describe('resolveAndSchedule', () => {
         { findings: 'e', dependencies: [{ repo: '/ghq/github.com/acme/app', reason: 'e->a (cycle)' }] },
       ],
     });
-    const r = await resolveAndSchedule(wf, 'DEA-8', deps({ memory }));
+    const r = await resolveAndSchedule(wf, 'ABC-8', deps({ memory }));
     expect(r.halted?.reason).toBe('cycle');
     // The graph must NOT have been written to memory.
-    expect(RepoMemory.load(join(dir, 'm4.json')).get('DEA-8')).toBeUndefined();
+    expect(RepoMemory.load(join(dir, 'm4.json')).get('ABC-8')).toBeUndefined();
   });
 });

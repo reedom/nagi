@@ -16,7 +16,7 @@ describe('investigate-ticket entry', () => {
   it('accepts a ticketRef arg and rejects empty', () => {
     const entry = makeInvestigateTicketEntry(config);
     expect(entry.id).toBe('investigate-ticket');
-    expect(entry.argsSchema.safeParse({ ticketRef: 'DEA-1' }).success).toBe(true);
+    expect(entry.argsSchema.safeParse({ ticketRef: 'ABC-1' }).success).toBe(true);
     expect(entry.argsSchema.safeParse({}).success).toBe(false);
   });
 });

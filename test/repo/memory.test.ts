@@ -11,13 +11,13 @@ afterEach(() => { rmSync(dir, { recursive: true, force: true }); });
 
 describe('RepoMemory', () => {
   it('returns undefined for unknown tickets and a missing file', () => {
-    expect(RepoMemory.load(file).get('DEA-1')).toBeUndefined();
+    expect(RepoMemory.load(file).get('ABC-1')).toBeUndefined();
   });
 
   it('persists and reloads a ticket graph', () => {
     const m = RepoMemory.load(file);
-    m.remember('DEA-1', { nodes: ['/a'], edges: [] });
-    expect(RepoMemory.load(file).get('DEA-1')).toEqual({ nodes: ['/a'], edges: [] });
+    m.remember('ABC-1', { nodes: ['/a'], edges: [] });
+    expect(RepoMemory.load(file).get('ABC-1')).toEqual({ nodes: ['/a'], edges: [] });
   });
 
   it('persists aliases', () => {

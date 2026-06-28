@@ -40,7 +40,7 @@ export function makeInvestigateTicketEntry(config: NagiConfig): RegistryEntry {
     id: 'investigate-ticket',
     description:
       'Investigate a ticket end-to-end: find the starting repo, root-cause it, and follow ' +
-      'repo-to-repo dependencies. Use when the user references a ticket (e.g. DEA-1234, SOA-1234).',
+      'repo-to-repo dependencies. Use when the user references a ticket (e.g. ABC-1234, XYZ-1234).',
     argsSchema: z.object({ ticketRef: z.string().min(1), repoHint: z.string().optional() }),
     module: makeModule(config),
   };

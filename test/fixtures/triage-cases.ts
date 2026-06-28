@@ -27,8 +27,8 @@ export const triageCases: TriageCase[] = [
   { name: 'best practices', input: 'what are the current best practices for socket-mode slack bots?', expect: { workflowId: 'research' } },
 
   // investigate-ticket dispatches
-  { name: 'investigate ticket dea', input: 'investigate ticket DEA-1234', expect: { workflowId: 'investigate-ticket' } },
-  { name: 'investigate ticket soa', input: 'look into SOA-42 and find the root cause', expect: { workflowId: 'investigate-ticket' } },
+  { name: 'investigate ticket abc', input: 'investigate ticket ABC-1234', expect: { workflowId: 'investigate-ticket' } },
+  { name: 'investigate ticket xyz', input: 'look into XYZ-42 and find the root cause', expect: { workflowId: 'investigate-ticket' } },
 
   // surface dispatches
   { name: 'surface engine', input: 'open a surface and run auth review on engine', expect: { workflowId: 'surface' } },

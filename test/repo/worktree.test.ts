@@ -3,14 +3,14 @@ import { ScriptProvisioner } from '../../src/repo/worktree.js';
 
 describe('ScriptProvisioner', () => {
   it('returns the last stdout line as the worktree cwd', async () => {
-    const fakeRun = async () => 'creating...\n/Users/x/ghq/github.com/reedom/nagi.DEA-1\n';
+    const fakeRun = async () => 'creating...\n/Users/x/ghq/github.com/reedom/nagi.ABC-1\n';
     const p = new ScriptProvisioner('scripts/worktree-provision.worktrunk.sh', fakeRun);
-    expect(await p.provision('/repo', 'DEA-1')).toBe('/Users/x/ghq/github.com/reedom/nagi.DEA-1');
+    expect(await p.provision('/repo', 'ABC-1')).toBe('/Users/x/ghq/github.com/reedom/nagi.ABC-1');
   });
 
   it('throws when the script prints no path', async () => {
     const p = new ScriptProvisioner('s.sh', async () => '   \n');
-    await expect(p.provision('/repo', 'DEA-1')).rejects.toThrow(/no worktree path/);
+    await expect(p.provision('/repo', 'ABC-1')).rejects.toThrow(/no worktree path/);
   });
 
   it('rejects a ticket containing path-traversal characters before running the script', async () => {
