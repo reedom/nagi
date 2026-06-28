@@ -31,7 +31,7 @@ const investigateSchema = z.object({
 // scoped candidates the ticket starts in. Only in-scope repos enter the graph.
 async function seed(wf: WorkflowApi, ticket: string, deps: ResolveDeps, graph: RepoGraph): Promise<void> {
   const known = deps.memory.get(ticket);
-  if (known) { for (const n of known.nodes) graph.addNode(n); return; }
+  if (known) { for (const n of filterScope(known.nodes, deps.scopes).approved) graph.addNode(n); return; }
   const candidates = await deps.listRepos(deps.scopes);
   const res = await wf.agent(
     `Ticket: ${ticket}\nUsing your available ticket tools, read it and pick the repo(s) where ` +
@@ -55,8 +55,14 @@ export async function resolveAndSchedule(wf: WorkflowApi, ticket: string, deps: 
     const batch = await wf.parallel(
       ready.map((repo) => async () => investigateNode(wf, ticket, repo, deps)),
     );
-    for (const node of batch) {
-      if (!node) continue;
+    for (let i = 0; i < batch.length; i += 1) {
+      const node = batch[i];
+      const repo = ready[i] as string;
+      if (!node) {
+        graph.markProcessed(repo);
+        findings.push({ repo, findings: 'investigation failed (no agent result)', dependencies: [] });
+        continue;
+      }
       graph.markProcessed(node.repo);
       findings.push(node);
       halted = absorb(graph, node, deps);

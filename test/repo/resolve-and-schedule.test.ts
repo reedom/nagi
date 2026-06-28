@@ -70,4 +70,41 @@ describe('resolveAndSchedule', () => {
     const r = await resolveAndSchedule(wf, 'DEA-3', deps({}));
     expect(r.halted?.reason).toBe('cycle');
   });
+
+  it('resolves and records a failure when a node investigation throws', async () => {
+    // Use a parallel fake that catches thrown thunks and returns null, mimicking engine contract.
+    const wf = {
+      ...fakeWf({ identify: [{ repos: ['/ghq/github.com/acme/app'] }] }),
+      async parallel<T>(thunks: Array<() => Promise<T>>) {
+        return Promise.all(thunks.map((t) => t().catch(() => null)));
+      },
+    } as any;
+    const d = deps({
+      provisioner: {
+        async provision(p: string) {
+          if (p === '/ghq/github.com/acme/app') throw new Error('provision failed');
+          return `${p}.wt`;
+        },
+      },
+    });
+    const r = await resolveAndSchedule(wf, 'DEA-4', d);
+    expect(r.halted).toBeUndefined();
+    const failed = r.findings.find((f) => f.repo === '/ghq/github.com/acme/app');
+    expect(failed).toBeDefined();
+    expect(failed?.findings).toMatch(/failed/);
+  });
+
+  it('filters out-of-scope nodes when seeding from memory', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'nagi-sched-'));
+    const memory = RepoMemory.load(join(dir, 'm2.json'));
+    memory.remember('DEA-5', {
+      nodes: ['/ghq/github.com/acme/app', '/ghq/github.com/evil/x'],
+      edges: [],
+    });
+    const wf = fakeWf({
+      investigate: [{ findings: 'ok', dependencies: [] }],
+    });
+    const r = await resolveAndSchedule(wf, 'DEA-5', deps({ memory }));
+    expect(r.graph.nodes).not.toContain('/ghq/github.com/evil/x');
+  });
 });
