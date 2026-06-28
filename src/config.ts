@@ -1,5 +1,4 @@
 import { readFileSync } from 'node:fs';
-import { isAbsolute } from 'node:path';
 import { z } from 'zod';
 
 // All operator-tunable settings live in one validated object. Secrets (Slack
@@ -23,9 +22,18 @@ const configSchema = z.object({
     allowedTeamId: z.string().min(1),
     allowedUserIds: z.array(z.string().min(1)).min(1),
   }),
-  // Repo references are a configured alias map; free-form paths are
-  // unrepresentable in workflow arg schemas (D13).
-  repos: z.record(z.string().min(1), z.string().refine(isAbsolute, 'repo path must be absolute')),
+  // The host/owner scope allowlist: ghq repos whose segments match one of
+  // these globs are the only candidates an agent may ever touch (security).
+  repoScopes: z.array(z.string().min(1)).min(1),
+  // Where learned ticket->repo-graph resolutions persist (runtime-written).
+  learnedReposPath: z.string().default('./learned-repos.json'),
+  // Upper bound on a ticket's dependency graph; protects against runaway growth.
+  maxRepos: z.number().int().positive().default(10),
+  // The provisioner script nagi runs to create/enter a worktree. Selecting a
+  // different script swaps the mechanism (worktrunk, plain git, ...).
+  worktree: z
+    .object({ script: z.string().min(1).default('scripts/worktree-provision.worktrunk.sh') })
+    .default({}),
   // Optional explicit cmux access for the surfaced lane. When omitted, the host
   // runs `cmux` with no --socket/--password and cmux self-resolves from its env
   // (CMUX_SOCKET_PATH, CMUX_SOCKET_PASSWORD), default socket, and saved Settings.
@@ -74,7 +82,3 @@ export function loadSecrets(env: NodeJS.ProcessEnv): Secrets {
   return { botToken, appToken };
 }
 
-/** The aliases workflows may reference, derived from the repo map (D13). */
-export function repoAliases(config: NagiConfig): string[] {
-  return Object.keys(config.repos);
-}
