@@ -12,4 +12,20 @@ describe('ScriptProvisioner', () => {
     const p = new ScriptProvisioner('s.sh', async () => '   \n');
     await expect(p.provision('/repo', 'DEA-1')).rejects.toThrow(/no worktree path/);
   });
+
+  it('rejects a ticket containing path-traversal characters before running the script', async () => {
+    let ran = false;
+    const fakeRun = async () => { ran = true; return '/some/path\n'; };
+    const p = new ScriptProvisioner('s.sh', fakeRun);
+    await expect(p.provision('/repo', '../../tmp/x')).rejects.toThrow(/invalid ticket/);
+    expect(ran).toBe(false);
+  });
+
+  it('rejects a ticket with a leading slash before running the script', async () => {
+    let ran = false;
+    const fakeRun = async () => { ran = true; return '/some/path\n'; };
+    const p = new ScriptProvisioner('s.sh', fakeRun);
+    await expect(p.provision('/repo', '/etc/passwd')).rejects.toThrow(/invalid ticket/);
+    expect(ran).toBe(false);
+  });
 });

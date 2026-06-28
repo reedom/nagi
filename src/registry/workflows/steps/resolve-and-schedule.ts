@@ -28,24 +28,45 @@ const investigateSchema = z.object({
 });
 
 // Seed the graph from memory if known, else ask the identify agent which of the
-// scoped candidates the ticket starts in. Only in-scope repos enter the graph.
-async function seed(wf: WorkflowApi, ticket: string, deps: ResolveDeps, graph: RepoGraph): Promise<void> {
+// scoped candidates the ticket starts in. Membership in candidates (the live ghq
+// set) is checked in addition to scope to prevent fabricated paths from entering.
+async function seed(
+  wf: WorkflowApi,
+  ticket: string,
+  deps: ResolveDeps,
+  graph: RepoGraph,
+  candidates: Set<string>,
+): Promise<void> {
   const known = deps.memory.get(ticket);
-  if (known) { for (const n of filterScope(known.nodes, deps.scopes).approved) graph.addNode(n); return; }
-  const candidates = await deps.listRepos(deps.scopes);
+  if (known) {
+    // Restore in-scope AND still-extant nodes; also restore edges between approved nodes.
+    const approved = new Set(
+      filterScope(known.nodes, deps.scopes).approved.filter((n) => candidates.has(n)),
+    );
+    for (const n of approved) graph.addNode(n);
+    for (const e of known.edges) {
+      if (approved.has(e.from) && approved.has(e.to)) graph.addEdge(e.from, e.to, e.reason);
+    }
+    return;
+  }
   const res = await wf.agent(
     `Ticket: ${ticket}\nUsing your available ticket tools, read it and pick the repo(s) where ` +
-      `investigation should START, choosing only from this candidate list:\n${candidates.join('\n')}\n` +
+      `investigation should START, choosing only from this candidate list:\n${[...candidates].join('\n')}\n` +
       `Return { "repos": [...] } with absolute paths copied verbatim from the list.`,
     { label: 'identify', phase: 'identify', schema: identifySchema, tools: ['Bash', 'Read', 'Grep'] },
   );
   const picked = identifySchema.parse(res.data).repos;
-  for (const p of filterScope(picked, deps.scopes).approved) graph.addNode(p);
+  // Intersect scope check with membership so fabricated paths cannot enter the graph.
+  for (const p of filterScope(picked, deps.scopes).approved) {
+    if (candidates.has(p)) graph.addNode(p);
+  }
 }
 
 export async function resolveAndSchedule(wf: WorkflowApi, ticket: string, deps: ResolveDeps): Promise<ResolveResult> {
   const graph = new RepoGraph();
-  await seed(wf, ticket, deps, graph);
+  // Compute the live candidate set once; used to gate both seed and absorb.
+  const candidates = new Set(await deps.listRepos(deps.scopes));
+  await seed(wf, ticket, deps, graph, candidates);
 
   const findings: NodeFinding[] = [];
   let halted: ResolveResult['halted'];
@@ -59,13 +80,15 @@ export async function resolveAndSchedule(wf: WorkflowApi, ticket: string, deps: 
       const node = batch[i];
       const repo = ready[i] as string;
       if (!node) {
+        // Mid-batch halt: stop processing so spurious failure findings are not pushed.
+        if (halted) break;
         graph.markProcessed(repo);
         findings.push({ repo, findings: 'investigation failed (no agent result)', dependencies: [] });
         continue;
       }
       graph.markProcessed(node.repo);
       findings.push(node);
-      halted = absorb(graph, node, deps);
+      halted = absorb(graph, node, deps, candidates);
       if (halted) break;
     }
     if (graph.size() !== 0 && deps.maxRepos <= graph.size() && graph.hasUnprocessed() && !halted) {
@@ -74,7 +97,8 @@ export async function resolveAndSchedule(wf: WorkflowApi, ticket: string, deps: 
   }
 
   const data = graph.toData();
-  deps.memory.remember(ticket, data);
+  // Only persist a complete (non-halted) graph so partial results do not become canonical memory.
+  if (!halted) deps.memory.remember(ticket, data);
   return { graph: data, findings, ...(halted ? { halted } : {}) };
 }
 
@@ -91,11 +115,18 @@ async function investigateNode(wf: WorkflowApi, ticket: string, repo: string, de
   return { repo, findings: parsed.findings, dependencies: parsed.dependencies };
 }
 
-// Scope-filter discovered dependencies, then add edges; signal a cycle halt.
-function absorb(graph: RepoGraph, node: NodeFinding, deps: ResolveDeps): ResolveResult['halted'] {
+// Scope-filter and membership-check discovered dependencies, then add edges; signal a cycle halt.
+function absorb(
+  graph: RepoGraph,
+  node: NodeFinding,
+  deps: ResolveDeps,
+  candidates: Set<string>,
+): ResolveResult['halted'] {
   const approved = filterScope(node.dependencies.map((d) => d.repo), deps.scopes).approved;
   for (const dep of node.dependencies) {
     if (!approved.includes(dep.repo)) continue;
+    // Enforce ghq membership: in-scope-looking but non-existent paths are rejected.
+    if (!candidates.has(dep.repo)) continue;
     if (graph.wouldCreateCycle(node.repo, dep.repo)) {
       return { reason: 'cycle', detail: `${node.repo} <-> ${dep.repo}` };
     }

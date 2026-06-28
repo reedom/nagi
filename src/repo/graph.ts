@@ -36,7 +36,10 @@ export class RepoGraph {
   addEdge(from: string, to: string, reason: string): void {
     this.addNode(from);
     this.addNode(to);
-    this.edges.push({ from, to, reason });
+    // Idempotent: skip duplicate edges so re-discovery on re-run does not accumulate them.
+    if (!this.edges.some((e) => e.from === from && e.to === to)) {
+      this.edges.push({ from, to, reason });
+    }
   }
 
   markProcessed(p: string): void { this.processed.add(p); }

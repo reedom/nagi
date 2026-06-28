@@ -24,6 +24,10 @@ export class ScriptProvisioner implements WorktreeProvisioner {
   constructor(private readonly script: string, private readonly run: ScriptRunner = defaultRunner) {}
 
   async provision(repoPath: string, ticket: string): Promise<string> {
+    // Reject ticket values that could escape the worktree path via directory traversal.
+    if (!/^[A-Za-z0-9._-]+$/.test(ticket)) {
+      throw new Error(`invalid ticket: must match [A-Za-z0-9._-], got: ${ticket}`);
+    }
     const stdout = await this.run(this.script, repoPath, ticket);
     const lines = stdout.split('\n').map((l) => l.trim()).filter((l) => l.length !== 0);
     const last = lines[lines.length - 1];
