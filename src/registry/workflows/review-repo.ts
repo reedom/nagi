@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { WorkflowApi, WorkflowModule } from 'ai-workflow-engine';
-import type { EntryFactory, RegistryEntry } from '../types.js';
+import type { WorkflowFactory, RegistryEntry } from '../types.js';
 
 interface ReviewArgs { repoHint: string; scope: 'repo' | 'diff'; focus?: string }
 
@@ -22,7 +22,7 @@ const reviewModule: WorkflowModule = {
   },
 };
 
-export const reviewRepoEntry: EntryFactory = (): RegistryEntry => ({
+export const reviewRepoEntry: WorkflowFactory = (): RegistryEntry => ({
   id: 'review-repo',
   description:
     'Review a repository (or its working diff) and summarize the most important risks. ' +

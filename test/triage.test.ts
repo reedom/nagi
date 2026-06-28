@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { runTriage } from '../src/triage/triage.js';
-import { makeRegistry } from '../src/registry/index.js';
+import { buildRegistry } from '../src/registry/index.js';
 import { fakeAdapter, recordingLogger, testConfig } from './helpers.js';
 import type { CliAdapter } from 'ai-workflow-engine';
+import { reviewRepo, research, surface, investigateTicket } from '../src/workflows/index.js';
 
 const config = testConfig();
-const registry = makeRegistry(config);
+const registry = buildRegistry([reviewRepo, research, surface, investigateTicket], { config });
 
 function deps(adapter: CliAdapter, log = recordingLogger()) {
   return { adapter, policy: config.triage, registry, log };

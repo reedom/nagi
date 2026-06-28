@@ -1,5 +1,6 @@
 import type { ZodType } from 'zod';
 import type { WorkflowModule } from 'ai-workflow-engine';
+import type { NagiConfig } from '../config.js';
 
 // A registry entry embeds a REAL WorkflowModule (2A): the concierge calls
 // runWorkflow(entry.module, ...). Generated foundry files (v2) and hand-written
@@ -17,7 +18,8 @@ export interface RegistryEntry {
   surfaced?: boolean;
 }
 
-export type EntryFactory = () => RegistryEntry;
+export interface NagiContext { config: NagiConfig }
+export type WorkflowFactory = (ctx: NagiContext) => RegistryEntry;
 
 export class Registry {
   private readonly byId: Map<string, RegistryEntry>;
@@ -43,6 +45,6 @@ export class Registry {
   }
 }
 
-export function buildRegistry(factories: EntryFactory[]): Registry {
-  return new Registry(factories.map((make) => make()));
+export function buildRegistry(factories: WorkflowFactory[], ctx: NagiContext): Registry {
+  return new Registry(factories.map((make) => make(ctx)));
 }

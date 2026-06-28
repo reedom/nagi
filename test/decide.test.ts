@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { decide } from '../src/dispatcher/decide.js';
-import { makeRegistry } from '../src/registry/index.js';
+import { buildRegistry } from '../src/registry/index.js';
 import { triageResultSchema } from '../src/triage/schema.js';
 import { testConfig } from './helpers.js';
+import { reviewRepo, research, surface, investigateTicket } from '../src/workflows/index.js';
 
 const config = testConfig();
-const registry = makeRegistry(config);
+const registry = buildRegistry([reviewRepo, research, surface, investigateTicket], { config });
 
 const triage = (over: Partial<Record<string, unknown>>) =>
   triageResultSchema.parse({ workflowId: 'review-repo', args: {}, confidence: 0.9, ...over });

@@ -43,12 +43,12 @@ The claude adapter grants unrestricted Bash on the host. nagi therefore refuses
 any message whose Slack **team id** is not `slack.allowedTeamId` or whose user
 is not in `slack.allowedUserIds` — before triage or any engine call.
 
-## Repos are aliases
+## Repos
 
-Workflows reference repositories by **alias** (`repos` in the config), never a
-free-form path. A request for an unknown repo gets a clarification listing the
-valid aliases. The dispatcher sets the run-level `cwd` to the alias's absolute
-path, so agents operate inside the target repo.
+Workflows discover repositories through `repoScopes` in the config (e.g.
+`["github.com/reedom/*"]`). `ghq` resolves each scope to local clone paths;
+`RepoMemory` caches past hits. The dispatcher sets the run-level `cwd` to the
+resolved path, so agents operate inside the target repo.
 
 ## Setup
 
@@ -86,14 +86,62 @@ clean process. Edit the paths/tokens, `chmod 600`, copy to
 
 ## Workflows
 
-Seed workflows live in `src/registry/workflows/`:
-- **`review-repo`** — review a repo (or its working diff) and summarize risks.
+Built-in workflows (importable from `nagi/workflows`):
+- **`reviewRepo`** — review a repo (or its working diff) and summarize risks.
 - **`research`** — research a question from several angles in parallel, then
   synthesize (exercises approval serialization + budget under concurrency).
+- **`surface`** — run a task on a visible cmux surface; the surface stays resident.
+- **`investigateTicket`** — trace a ticket across dependent repos.
 
 A registry entry is `{ id, description, argsSchema (zod), module }` where
-`module` is a real engine `WorkflowModule`. Add one in
-`src/registry/index.ts`'s `SEED_FACTORIES`; it becomes triageable immediately.
+`module` is a real engine `WorkflowModule`. Supply entries to `createNagi` as
+`WorkflowFactory` functions; the registry is built from that list at startup.
+
+## Use as a dependency
+
+Add nagi to your project's `package.json`:
+
+```json
+"nagi": "git+ssh://git@github.com/reedom/nagi.git#v0.1.0"
+```
+
+**Minimal consumer** (`my-nagi.ts`):
+
+```ts
+import { createNagi } from 'nagi';
+import { investigateTicket } from 'nagi/workflows';
+
+createNagi({
+  config: './nagi.config.json',
+  workflows: [investigateTicket],
+}).start();
+```
+
+**Custom workflow factory**:
+
+```ts
+import { createNagi } from 'nagi';
+import type { WorkflowFactory } from 'nagi';
+import { z } from 'zod';
+
+const myWorkflow: WorkflowFactory = (_ctx) => ({
+  id: 'my-workflow',
+  description: 'Does something custom.',
+  argsSchema: z.object({ target: z.string() }),
+  module: {
+    meta: { name: 'my-workflow', description: 'Does something custom.' },
+    async default(wf) {
+      const result = await wf.agent(`Do the thing: ${(wf.args as { target: string }).target}`);
+      return { summary: result.text };
+    },
+  },
+});
+
+createNagi({ config: './nagi.config.json', workflows: [myWorkflow] }).start();
+```
+
+**External runtime prerequisites** (must be on `PATH`):
+`claude`, `codex`, `cmux`, `agentbus`, `ghq`, `wt`
 
 ## Triage eval
 

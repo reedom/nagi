@@ -1,23 +1,2 @@
-import type { NagiConfig } from '../config.js';
-import { buildRegistry, Registry, type EntryFactory } from './types.js';
-import { reviewRepoEntry } from './workflows/review-repo.js';
-import { researchEntry } from './workflows/research.js';
-import { approvalDemoEntry } from './workflows/approval-demo.js';
-import { surfaceEntry } from './workflows/surface.js';
-import { makeInvestigateTicketEntry } from './workflows/investigate-ticket.js';
-
-// The hand-registered workflow set for v1. Compose-on-the-fly is v2 (foundry).
-export const SEED_FACTORIES: EntryFactory[] = [reviewRepoEntry, researchEntry, surfaceEntry];
-
-export function makeRegistry(config: NagiConfig): Registry {
-  // The approval demo is opt-in so it never competes for triage in normal use.
-  const seed =
-    process.env['NAGI_ENABLE_APPROVAL_DEMO'] === '1'
-      ? [...SEED_FACTORIES, approvalDemoEntry]
-      : SEED_FACTORIES;
-  const base = buildRegistry(seed);
-  return new Registry([...base.list(), makeInvestigateTicketEntry(config)]);
-}
-
-export { Registry } from './types.js';
-export type { RegistryEntry } from './types.js';
+export { Registry, buildRegistry } from './types.js';
+export type { RegistryEntry, WorkflowFactory, NagiContext } from './types.js';
