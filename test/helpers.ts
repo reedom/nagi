@@ -7,7 +7,7 @@ import type { ThreadReplier } from '../src/types.js';
 export function testConfig(overrides: Partial<Record<string, unknown>> = {}): NagiConfig {
   return parseConfig({
     slack: { allowedTeamId: 'T1', allowedUserIds: ['U1'] },
-    repos: { engine: '/tmp/engine', web: '/tmp/web' },
+    repoScopes: ['github.com/reedom/*'],
     triage: { confidenceThreshold: 0.6 },
     defaultBudget: 100_000,
     auditLogPath: '/dev/null',

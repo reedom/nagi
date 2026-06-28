@@ -1,6 +1,6 @@
 import { makeClaudeAdapter, makeCodexAdapter } from 'ai-workflow-engine';
 import { makeCmuxClaudeAdapter, makeCmuxHost, register, awaitInbox, reply, runProcess } from 'agent-surface-adapters';
-import { loadConfig, loadSecrets, repoAliases } from './config.js';
+import { loadConfig, loadSecrets } from './config.js';
 import { logger } from './logger.js';
 import { makeAuditLog } from './audit.js';
 import { makeRegistry } from './registry/index.js';
@@ -27,7 +27,6 @@ async function main(): Promise<void> {
   const config = loadConfig(configPath);
   const secrets = loadSecrets(process.env);
 
-  const aliases = repoAliases(config);
   const registry = makeRegistry(config);
   const audit = makeAuditLog(config.auditLogPath, logger);
   const queue = new WorkQueue(logger);
@@ -88,7 +87,7 @@ async function main(): Promise<void> {
   const dispatcher = new Dispatcher({
     config,
     registry,
-    triage: { adapter: claude, policy: config.triage, registry, aliases, log: logger },
+    triage: { adapter: claude, policy: config.triage, registry, aliases: [], log: logger },
     adapters: { claude, codex },
     audit,
     queue,

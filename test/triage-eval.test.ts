@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { makeClaudeAdapter } from 'ai-workflow-engine';
 import { makeRegistry } from '../src/registry/index.js';
-import { repoAliases } from '../src/config.js';
 import { runTriage } from '../src/triage/triage.js';
 import { decide } from '../src/dispatcher/decide.js';
 import { recordingLogger, testConfig } from './helpers.js';
@@ -43,7 +42,7 @@ describe.skipIf(!live)('triage live eval', () => {
     adapter: makeClaudeAdapter(),
     policy: config.triage,
     registry,
-    aliases: repoAliases(config),
+    aliases: [] as string[],
     log: recordingLogger(),
   };
 

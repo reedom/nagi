@@ -11,14 +11,14 @@ const triage = (over: Partial<Record<string, unknown>>) =>
   triageResultSchema.parse({ workflowId: 'review-repo', args: {}, confidence: 0.9, ...over });
 
 describe('decide (4A unified clarification path)', () => {
-  it('dispatches a valid review-repo request with the resolved cwd', () => {
-    const d = decide(config, registry, triage({ args: { repo: 'engine', scope: 'repo' } }));
+  it('dispatches a valid review-repo request', () => {
+    const d = decide(config, registry, triage({ args: { repoHint: 'engine', scope: 'repo' } }));
     expect(d.kind).toBe('dispatch');
     if (d.kind === 'dispatch') {
       expect(d.entry.id).toBe('review-repo');
-      expect(d.cwd).toBe('/tmp/engine');
+      expect(d.cwd).toBeUndefined();
       expect(d.budget).toBe(100_000);
-      expect(d.args).toMatchObject({ repo: 'engine', scope: 'repo' });
+      expect(d.args).toMatchObject({ repoHint: 'engine', scope: 'repo' });
     }
   });
 
@@ -41,12 +41,6 @@ describe('decide (4A unified clarification path)', () => {
   it('clarifies on an unknown workflow id (hallucination)', () => {
     const d = decide(config, registry, triage({ workflowId: 'nope', confidence: 0.95 }));
     expect(d.kind).toBe('clarify');
-  });
-
-  it('clarifies and lists valid repos when the repo alias is unknown (D13)', () => {
-    const d = decide(config, registry, triage({ args: { repo: 'ghost' } }));
-    expect(d.kind).toBe('clarify');
-    if (d.kind === 'clarify') expect(d.question).toMatch(/engine, web/);
   });
 
   it('clarifies and names the bad field on schema failure', () => {
