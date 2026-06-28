@@ -15,12 +15,11 @@ export interface TriageDeps {
   adapter: CliAdapter;
   policy: TriageConfig;
   registry: Registry;
-  aliases: string[];
   log: Logger;
 }
 
 export async function runTriage(deps: TriageDeps, text: string): Promise<TriageResult> {
-  const instructions = buildTriagePrompt(deps.registry, deps.aliases);
+  const instructions = buildTriagePrompt(deps.registry);
   const spec = {
     prompt: buildTriageUserPrompt(text),
     model: deps.policy.model,

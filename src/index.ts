@@ -87,7 +87,7 @@ async function main(): Promise<void> {
   const dispatcher = new Dispatcher({
     config,
     registry,
-    triage: { adapter: claude, policy: config.triage, registry, aliases: [], log: logger },
+    triage: { adapter: claude, policy: config.triage, registry, log: logger },
     adapters: { claude, codex },
     audit,
     queue,
