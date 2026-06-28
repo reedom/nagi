@@ -18,7 +18,7 @@ refs:
 
 # FR 12: Agentbus Surfaced Lane
 
-> nagi has a second execution lane next to the headless one. A request routed to a workflow flagged `surfaced` opens an interactive `claude` on a cmux surface and lets the human watch it run. The engine's `run()` blocks on a `PendingRuns` promise keyed by `runId`, while the surfaced agent reports back over agentbus: an inbox pump feeds each envelope to `handleEnvelope`, which routes by `payload.type` to its bound Slack thread — `ask`+`approval` reuses the Block Kit approval UI ([08-escalation-approvals](08-escalation-approvals.md)), `progress` posts an hourglass update, and `result` unblocks the run. The surfaced lane never takes the single-flight queue slot ([06-single-flight-queue](06-single-flight-queue.md)), so many surfaced runs are concurrent from the start.
+> nagi has a second execution lane next to the headless one. A request routed to a workflow flagged `surfaced` opens an interactive `claude` on a cmux surface and lets the human watch it run. The engine's `run()` blocks on a `PendingRuns` promise keyed by `runId` — re-armed per surfaced agent, so one run can drive a whole multi-step workflow — while the surfaced agent reports back over agentbus: an inbox pump feeds each envelope to `handleEnvelope`, which routes by `payload.type` to its bound Slack thread — `ask`+`approval` reuses the Block Kit approval UI ([08-escalation-approvals](08-escalation-approvals.md)), `progress` posts an hourglass update, and `result` unblocks the run. The surfaced lane never takes the single-flight queue slot ([06-single-flight-queue](06-single-flight-queue.md)), so many surfaced runs are concurrent from the start.
 
 ## Purpose
 
@@ -42,7 +42,7 @@ When `runWorkflow` resolves, the dispatcher posts the formatted result and the r
 
 ### The per-run cmux adapter blocks on PendingRuns
 
-`makeSurfaceAdapter` is built in `src/index.ts` from `makeCmuxClaudeAdapter`. It is bound to nagi's chosen `runId` (`newRunId: () => runId`) and its `awaitResult: () => pending.awaitExisting(runId)` returns the *same* promise `launchSurfaced` created with `PendingRuns.await`. So the engine's `adapter.run()` blocks until the bridge resolves that promise. Its `onSurface` hook calls `pending.setSurfaceRef(runId, surface.ref)` and the launch-time `onSurfaceRef` callback when the surface ref arrives.
+`makeSurfaceAdapter` is built in `src/create-nagi.ts` from `makeCmuxClaudeAdapter`, bound to nagi's chosen `runId` and the run's thread binding. Its `newRunId` hook runs once per surfaced agent — *before* the surface launches — and re-arms the wait with `PendingRuns.await(runId, binding)`; `awaitResult: () => pending.awaitExisting(runId)` then returns that wait's promise, so the engine's `adapter.run()` blocks until the bridge resolves it. Because `await()` is idempotent while a wait is live and `resolveResult` clears it, a workflow that calls `wf.agent({ cli: 'cmux' })` N times in sequence drives N agents on this one run — each on its own surface, all reusing the same `runId` and thread binding (so progress / approvals / results still route to the originating thread). Its `onSurface` hook calls `pending.setSurfaceRef(runId, surface.ref)` and the launch-time `onSurfaceRef` callback when the surface ref arrives.
 
 ### PendingRuns: the run↔thread correlation registry
 
@@ -50,7 +50,7 @@ When `runWorkflow` resolves, the dispatcher posts the formatted result and the r
 
 | Method | Behavior |
 | --- | --- |
-| `await(runId, binding)` | Registers the entry, arms a wait-ceiling timer, returns the result promise. |
+| `await(runId, binding)` | Registers the entry, arms a wait-ceiling timer, returns the result promise. Idempotent while a wait is live (returns the existing promise), so a per-step re-arm is a no-op until `resolveResult`/`cancel` clears the entry — this is what lets one run drive multiple sequential surfaced agents. |
 | `awaitExisting(runId)` | Returns the already-registered promise (used by the adapter). |
 | `get(runId)` | Returns the `RunBinding` if tracked. |
 | `setSurfaceRef(runId, ref)` | Records the surface ref once cmux opens it. |
@@ -72,8 +72,18 @@ At startup `src/index.ts` does `register(NAGI_INSTANCE, { persistent: true })` a
 
 - **`ask` + `approval`** — builds a `PermissionRequest` (`agentLabel: 'surface'`, `cli: 'cmux'`, `toolName`/`toolInput`/optional `cwd` from the payload, `DEFAULT_POLICY`), posts it via a *reused* `makeSlackApprovalChannel` bound to the run's thread, awaits the decision, and sends it back with `agentbusReply(env.id, decision)`. Every approval guarantee — request-id button binding, snippet handling, the shared registry — applies identically ([08-escalation-approvals](08-escalation-approvals.md)).
 - **`progress`** — posts `:hourglass_flowing_sand: <text>` to the bound thread.
-- **`result`** — if a `PendingRuns` binding exists (turn 1) it calls `resolveResult(runId, text)` to unblock the engine's `run()`; the dispatcher then posts the result. If only a resident binding exists (turn 2+), there is no pending await, so the resident's output is posted straight to its thread ([13-resident-agent](13-resident-agent.md)).
+- **`result`** — if a `PendingRuns` binding exists (turn 1) it calls `resolveResult(runId, text, data)` to unblock the engine's `run()`; the dispatcher then posts the result. The optional `data` field carries the **schema-validated structured output** (see below) so `result.data` reaches the workflow, the same contract as the headless lane. If only a resident binding exists (turn 2+), there is no pending await, so the resident's output is posted straight to its thread ([13-resident-agent](13-resident-agent.md)).
 - **unknown type** — warn-logged.
+
+### Structured output on the surfaced lane
+
+The surfaced lane has no native structured-output flag (that is a headless `claude -p --json-schema` feature). When a workflow declares a `schema` on a surfaced `wf.agent(...)` call, the per-run adapter writes the JSON Schema to the run dir, records its path in the agent's `meta.json`, and injects the schema into the agent's system prompt. The agent's **Stop hook** (`report-result-via-agentbus.ts`) then reads the final message, validates the extracted JSON against that schema, and:
+
+- **valid** → sends `{ type: 'result', runId, text, data }` and allows the stop;
+- **invalid, under the cap** → returns `{ decision: 'block', ..., hookSpecificOutput.additionalContext }` so the agent stays on the surface and repairs, bounded by a per-run repair-attempt counter (`maxRepairs`, default 3);
+- **invalid, cap reached** → sends a result with an `error` (no `data`) so the run still unblocks. The bridge carries `error` through `resolveResult` into `RunResult` (and warn-logs it), and the surface adapter throws it, so the workflow step fails with the real cause rather than a downstream undefined-`data` artifact.
+
+So validation and the repair loop live in the harness (the hook), not the model. The per-step repair counter is keyed by `sessionId` (fresh per step) so each step of a multi-step run gets its own repair budget. Steps without a schema (the seed `surface`, free-text steps) keep the plain text-reporting path.
 
 ### Post-result resident handoff
 
@@ -83,6 +93,8 @@ After turn 1 resolves and the dispatcher posts the result, it posts the resident
 
 - Route `surfaced`-flagged registry entries through `launchSurfaced` instead of the in-thread run ([05-request-dispatch](05-request-dispatch.md)).
 - Run interactive `claude` on a cmux surface via a per-run `makeCmuxClaudeAdapter`, whose `run()` blocks on `PendingRuns.awaitExisting(runId)`.
+- Drive **multiple sequential agents** on one surfaced run: each `wf.agent({ cli: 'cmux' })` re-arms the run's wait and opens its own surface, so a multi-step workflow (not just a single-agent task) runs surfaced, with deterministic orchestration code between the steps.
+- Return **schema-validated structured output** (`result.data`) from a surfaced agent: the declared schema is delivered to the agent and enforced by the Stop hook (validate + bounded repair) — structured output without the headless `--json-schema` flag.
 - Track concurrent surfaced runs by `runId ↔ {channel, threadTs, surfaceRef?, ceilingMs}`, freeing the single-flight slot at launch ([06-single-flight-queue](06-single-flight-queue.md)).
 - Pump the agentbus inbox into `handleEnvelope`, routing `ask`/`approval`, `progress`, and `result` to the originating Slack thread.
 - Reuse the Slack approval channel verbatim for surfaced tool-approvals ([08-escalation-approvals](08-escalation-approvals.md)).
@@ -97,9 +109,10 @@ After turn 1 resolves and the dispatcher posts the result, it posts the resident
 - `PendingRuns` is in-memory only; in-flight surfaced runs are lost on a daemon crash (accepted for v1, consistent with the headless lane).
 - `stop` cancels **all** active surfaced runs (closing each surface and rejecting its await); per-run targeting is deferred (design-only) ([07-control-commands](07-control-commands.md)).
 - Cmux socket/window/password options and `SURFACE_CEILING_MS` are wired in `src/index.ts`; the surface-from-daemon launch context belongs to [11-daemon-lifecycle](11-daemon-lifecycle.md).
+- The surfaced agent's hook helpers (approval + result/validation) are spawned by Claude Code as `node <path>` commands resolved relative to the bundle, so the build must emit them as real files at `dist/hook/*.js` (`tsup.config.ts` entries). A bundled install missing those files would leave the surfaced agent unable to report results.
 
 ## Traceability
 
-- **Design decisions**: Phase 2 components — §1 (agentbus bridge), §3 (concurrent surfaced dispatch bypassing the queue), §4 (cmux adapter injection), §5 (the `surface` worker leaf), plus the Concurrency & cancellation section (multi-run `PendingRuns`, surface-aware `stop`, the wait-ceiling). Persistent resident agents, per-run `stop` targeting, and per-agent correlation ids are marked deferred.
+- **Design decisions**: Phase 2 components — §1 (agentbus bridge), §3 (concurrent surfaced dispatch bypassing the queue), §4 (cmux adapter injection), §5 (the `surface` worker leaf), plus the Concurrency & cancellation section (multi-run `PendingRuns`, surface-aware `stop`, the wait-ceiling). Persistent resident agents and per-run `stop` targeting are marked deferred. Sequential multi-agent surfaced runs are supported by re-arming the shared `runId` wait per step (idempotent `await` + `resolveResult`); *concurrent* per-agent correlation (distinct ids per in-flight agent) remains deferred — agents within one run reuse the run's `runId`, so they must run one at a time.
 - **Modules**: `src/agentbus-bridge/` (`bridge.ts`, `pending-runs.ts`); `src/registry/workflows/surface.ts` (the surfaced workflow entry). Wired together in `src/dispatcher/dispatcher.ts` (`launchSurfaced`) and `src/index.ts` (`makeSurfaceAdapter`, the register + `awaitInbox` pump, `bridgeDeps`, `SURFACE_CEILING_MS`).
 - **Related FR**: [08-escalation-approvals](08-escalation-approvals.md) supplies the approval channel the bridge reuses for surfaced asks (hard dependency); [04-workflow-registry](04-workflow-registry.md) defines the `surfaced` flag and the `surface` entry; [05-request-dispatch](05-request-dispatch.md) decides and launches the surfaced lane; [06-single-flight-queue](06-single-flight-queue.md) is the slot the surfaced lane frees at launch; [11-daemon-lifecycle](11-daemon-lifecycle.md) registers nagi on agentbus and runs the inbox pump; [13-resident-agent](13-resident-agent.md) takes over once the first result hands the live surface off as a resident.

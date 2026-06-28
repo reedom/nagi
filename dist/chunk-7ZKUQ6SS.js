@@ -1,3 +1,13 @@
+import {
+  readUsage
+} from "./chunk-MXPDRPU6.js";
+import {
+  awaitInbox,
+  register,
+  reply,
+  runProcess
+} from "./chunk-ZO2TLVOL.js";
+
 // src/config.ts
 import { readFileSync } from "fs";
 import { z } from "zod";
@@ -479,7 +489,7 @@ function parseClaudeResult(stdout) {
     sessionId: typeof env["session_id"] === "string" ? env["session_id"] : void 0
   };
 }
-function runProcess(cmd, args, cwd) {
+function runProcess2(cmd, args, cwd) {
   return new Promise((resolve3, reject) => {
     const child = spawn(cmd, args, { cwd, stdio: ["ignore", "pipe", "pipe"] });
     let stdout = "";
@@ -533,8 +543,8 @@ function defaultHelperCommand() {
   return `"${process.execPath}" "${helper}"`;
 }
 function makeClaudeAdapter(opts = {}) {
-  const bin2 = opts.bin ?? "claude";
-  const run = opts.spawnFn ?? runProcess;
+  const bin = opts.bin ?? "claude";
+  const run = opts.spawnFn ?? runProcess2;
   return {
     id: "claude",
     caps: { schema: true, resume: true, tools: true },
@@ -546,7 +556,7 @@ function makeClaudeAdapter(opts = {}) {
         args.push("--settings", buildEscalationSettings(spec.escalation, tempDir));
       }
       try {
-        const { stdout, stderr, code } = await run(bin2, args, spec.cwd);
+        const { stdout, stderr, code } = await run(bin, args, spec.cwd);
         if (code !== 0)
           throw new Error(`claude exited ${code}: ${stderr.trim().slice(0, 500)}`);
         return parseClaudeResult(stdout);
@@ -616,14 +626,14 @@ function parseCodexEvents(stdout) {
   };
 }
 function makeCodexAdapter(opts = {}) {
-  const bin2 = opts.bin ?? "codex";
-  const run = opts.spawnFn ?? runProcess;
+  const bin = opts.bin ?? "codex";
+  const run = opts.spawnFn ?? runProcess2;
   const sandbox = opts.sandbox ?? "workspace-write";
   return {
     id: "codex",
     caps: { schema: false, resume: true, tools: false },
     async run(spec) {
-      const { stdout, stderr, code } = await run(bin2, buildCodexArgs(spec, sandbox), spec.cwd);
+      const { stdout, stderr, code } = await run(bin, buildCodexArgs(spec, sandbox), spec.cwd);
       if (code !== 0)
         throw new Error(`codex exited ${code}: ${stderr.trim().slice(0, 500)}`);
       return parseCodexEvents(stdout);
@@ -658,14 +668,21 @@ function composeSystemPrompt(instructions, directive) {
 
 ${directive}` : directive;
 }
+function schemaDirective(schema) {
+  return [
+    "IMPORTANT \u2014 Structured output required:",
+    "Your FINAL assistant message MUST be a single JSON object that conforms to this JSON Schema, and contain NOTHING else (no prose, no markdown, no code fences):",
+    JSON.stringify(schema)
+  ].join("\n");
+}
 
 // node_modules/.pnpm/agent-surface-adapters@file+..+agent-surface-adapters/node_modules/agent-surface-adapters/dist/core/launcher.js
 function shellQuote(arg) {
   const escaped = arg.replaceAll("'", `'\\''`);
   return `'${escaped}'`;
 }
-function launcherScript(bin2, args) {
-  const line = [bin2, ...args].map(shellQuote).join(" ");
+function launcherScript(bin, args) {
+  const line = [bin, ...args].map(shellQuote).join(" ");
   return `#!/usr/bin/env bash
 exec ${line}
 `;
@@ -678,16 +695,34 @@ function makeSurfaceAdapter(deps) {
   const runsDir = deps.runsDir ?? join5(homedir2(), ".agent-surface-adapters", "runs");
   const id = deps.id ?? deps.host.id;
   return {
+    // schema: structured output is supported via prompt delivery + Stop-hook validation
+    // (not a native CLI flag), so the consumer can rely on result.data when it declares one.
     id,
-    caps: { schema: false, resume: false, tools: true },
+    caps: { schema: true, resume: false, tools: true },
     async run(spec) {
       const runId = spec.escalation?.runId ?? deps.newRunId?.() ?? randomUUID();
       const sessionId = deps.newSessionId?.() ?? randomUUID();
       const policy = spec.escalation?.policy ?? DEFAULT_POLICY2;
       const runDir = join5(runsDir, runId);
       mkdirSync(runDir, { recursive: true });
-      const settingsFile = deps.agent.writeApprovalSettings({ runDir, runId, sessionId, nagiInstance, policy });
-      const systemPrompt = composeSystemPrompt(spec.instructions, agentbusDirective(runId, nagiInstance));
+      let schemaPath;
+      if (spec.schema !== void 0) {
+        schemaPath = join5(runDir, "schema.json");
+        writeFileSync3(schemaPath, JSON.stringify(spec.schema));
+      }
+      const settingsFile = deps.agent.writeApprovalSettings({
+        runDir,
+        runId,
+        sessionId,
+        nagiInstance,
+        policy,
+        ...schemaPath !== void 0 ? { schemaPath } : {},
+        ...deps.maxRepairs !== void 0 ? { maxRepairs: deps.maxRepairs } : {}
+      });
+      const directive = spec.schema !== void 0 ? `${agentbusDirective(runId, nagiInstance)}
+
+${schemaDirective(spec.schema)}` : agentbusDirective(runId, nagiInstance);
+      const systemPrompt = composeSystemPrompt(spec.instructions, directive);
       const args = deps.agent.buildArgs({
         sessionId,
         settingsFile,
@@ -701,40 +736,24 @@ function makeSurfaceAdapter(deps) {
       const surface = await deps.host.launch({ cwd: spec.cwd, command: `bash ${shellQuote(scriptPath)}` });
       deps.onSurface?.(surface);
       const result = await deps.awaitResult(runId);
+      if (result.error !== void 0)
+        throw new Error(result.error);
       const usage = deps.agent.readUsage(sessionId, spec.cwd) ?? { inputTokens: 0, outputTokens: 0 };
-      return { text: result.text, raw: { surface, runId, sessionId }, usage, sessionId };
+      return {
+        text: result.text,
+        ...result.data !== void 0 ? { data: result.data } : {},
+        raw: { surface, runId, sessionId },
+        usage,
+        sessionId
+      };
     }
   };
 }
 
-// node_modules/.pnpm/agent-surface-adapters@file+..+agent-surface-adapters/node_modules/agent-surface-adapters/dist/core/run.js
-import { spawn as spawn2 } from "child_process";
-var runProcess2 = (cmd, args, opts) => new Promise((resolve3, reject) => {
-  const useStdin = opts?.input !== void 0;
-  const child = spawn2(cmd, args, {
-    cwd: opts?.cwd,
-    stdio: [useStdin ? "pipe" : "ignore", "pipe", "pipe"]
-  });
-  let stdout = "";
-  let stderr = "";
-  child.stdout?.on("data", (d) => {
-    stdout += d;
-  });
-  child.stderr?.on("data", (d) => {
-    stderr += d;
-  });
-  child.on("error", reject);
-  child.on("close", (code) => resolve3({ stdout, stderr, code: code ?? -1 }));
-  if (useStdin && child.stdin) {
-    child.stdin.write(opts.input);
-    child.stdin.end();
-  }
-});
-
 // node_modules/.pnpm/agent-surface-adapters@file+..+agent-surface-adapters/node_modules/agent-surface-adapters/dist/hosts/cmux.js
 function makeCmuxHost(opts = {}) {
-  const bin2 = opts.bin ?? "cmux";
-  const run = opts.runner ?? runProcess2;
+  const bin = opts.bin ?? "cmux";
+  const run = opts.runner ?? runProcess;
   const globalArgs = () => {
     const args = [];
     if (opts.socketPath)
@@ -744,7 +763,7 @@ function makeCmuxHost(opts = {}) {
     return args;
   };
   const runOrThrow = async (verb, args) => {
-    const r = await run(bin2, [...globalArgs(), ...args]);
+    const r = await run(bin, [...globalArgs(), ...args]);
     if (r.code !== 0)
       throw new Error(`cmux ${verb} failed: ${r.stderr.trim().slice(0, 300)}`);
   };
@@ -758,7 +777,7 @@ function makeCmuxHost(opts = {}) {
       args.push("--command", input.command, "--json");
       if (opts.window)
         args.push("--window", opts.window);
-      const r = await run(bin2, args);
+      const r = await run(bin, args);
       if (r.code !== 0)
         throw new Error(`cmux new-workspace failed: ${r.stderr.trim().slice(0, 300)}`);
       let ref;
@@ -817,7 +836,9 @@ function writeApprovalSettings(input) {
     runId: input.runId,
     sessionId: input.sessionId,
     nagiInstance: input.nagiInstance,
-    timeoutMs: input.policy.onTimeout === "wait" ? 864e5 : input.policy.timeoutMs
+    timeoutMs: input.policy.onTimeout === "wait" ? 864e5 : input.policy.timeoutMs,
+    ...input.schemaPath !== void 0 ? { schemaPath: input.schemaPath } : {},
+    ...input.maxRepairs !== void 0 ? { maxRepairs: input.maxRepairs } : {}
   }));
   const settings = {
     hooks: {
@@ -854,57 +875,23 @@ function writeApprovalSettings(input) {
   return settingsPath;
 }
 
-// node_modules/.pnpm/agent-surface-adapters@file+..+agent-surface-adapters/node_modules/agent-surface-adapters/dist/agents/claude/result.js
-import { existsSync as existsSync2, readdirSync, readFileSync as readFileSync3 } from "fs";
-import { homedir as homedir3 } from "os";
-import { join as join7 } from "path";
-function projectsBase(deps) {
-  return deps.projectsDir ?? join7(homedir3(), ".claude", "projects");
-}
-function findTranscript(sessionId, deps = {}) {
-  const base = projectsBase(deps);
-  if (!existsSync2(base))
-    return null;
-  for (const dir of readdirSync(base)) {
-    const candidate = join7(base, dir, `${sessionId}.jsonl`);
-    if (existsSync2(candidate))
-      return candidate;
-  }
-  return null;
-}
-function readUsage(sessionId, deps = {}) {
-  const file = findTranscript(sessionId, deps);
-  if (!file)
-    return null;
-  const lines = readFileSync3(file, "utf8").split("\n").filter(Boolean);
-  for (let i = lines.length - 1; 0 <= i; i--) {
-    try {
-      const event = JSON.parse(lines[i]);
-      const usage = event.message?.usage;
-      if (usage && (usage.input_tokens !== void 0 || usage.output_tokens !== void 0)) {
-        return { inputTokens: Number(usage.input_tokens ?? 0), outputTokens: Number(usage.output_tokens ?? 0) };
-      }
-    } catch {
-    }
-  }
-  return null;
-}
-
 // node_modules/.pnpm/agent-surface-adapters@file+..+agent-surface-adapters/node_modules/agent-surface-adapters/dist/agents/claude/profile.js
 function makeClaudeProfile(opts = {}) {
-  const bin2 = opts.bin ?? "claude";
+  const bin = opts.bin ?? "claude";
   const hookHelperPath = opts.hookHelperPath ?? fileURLToPath2(new URL("./hook/approve-via-agentbus.js", import.meta.url));
   const reportHookHelperPath = opts.reportHookHelperPath ?? fileURLToPath2(new URL("./hook/report-result-via-agentbus.js", import.meta.url));
   return {
     id: "claude",
-    bin: bin2,
+    bin,
     buildArgs: (input) => buildClaudeArgs2(input),
-    writeApprovalSettings: ({ runDir, runId, sessionId, nagiInstance, policy }) => writeApprovalSettings({
+    writeApprovalSettings: ({ runDir, runId, sessionId, nagiInstance, policy, schemaPath, maxRepairs }) => writeApprovalSettings({
       runDir,
       runId,
       sessionId,
       nagiInstance,
       policy,
+      ...schemaPath !== void 0 ? { schemaPath } : {},
+      ...maxRepairs !== void 0 ? { maxRepairs } : {},
       hookCommand: `"${execPath}" "${hookHelperPath}"`,
       stopHookCommand: `"${execPath}" "${reportHookHelperPath}"`
     }),
@@ -919,45 +906,13 @@ function makeCmuxClaudeAdapter(opts) {
     host: makeCmuxHost({ bin: opts.cmuxBin, socketPath: opts.cmuxSocketPath, password: opts.cmuxPassword, window: opts.cmuxWindow }),
     agent: makeClaudeProfile({ bin: opts.claudeBin, hookHelperPath: opts.hookHelperPath }),
     awaitResult: opts.awaitResult,
+    ...opts.maxRepairs !== void 0 ? { maxRepairs: opts.maxRepairs } : {},
     nagiInstance: opts.nagiInstance,
     runsDir: opts.runsDir,
     newRunId: opts.newRunId,
     newSessionId: opts.newSessionId,
     onSurface: opts.onSurface
   });
-}
-
-// node_modules/.pnpm/agent-surface-adapters@file+..+agent-surface-adapters/node_modules/agent-surface-adapters/dist/core/agentbus.js
-function bin(opts) {
-  return opts.bin ?? "agentbus";
-}
-function runner(opts) {
-  return opts.runner ?? runProcess2;
-}
-async function awaitInbox(id, timeoutMs, opts = {}) {
-  const r = await runner(opts)(bin(opts), ["await", id, "--timeout-ms", String(timeoutMs)]);
-  if (r.code !== 0)
-    return [];
-  try {
-    return JSON.parse(r.stdout).envelopes ?? [];
-  } catch {
-    return [];
-  }
-}
-async function reply(askId, from, payload, opts = {}) {
-  const r = await runner(opts)(bin(opts), ["reply", askId, from], { input: JSON.stringify(payload) });
-  if (r.code !== 0)
-    throw new Error(`agentbus reply failed: ${r.stderr.trim().slice(0, 200)}`);
-}
-async function register(id, opts = {}) {
-  const args = ["register", id];
-  if (opts.persistent)
-    args.push("--persistent");
-  if (opts.pid !== void 0)
-    args.push("--pid", String(opts.pid));
-  const r = await runner(opts)(bin(opts), args);
-  if (r.code !== 0)
-    throw new Error(`agentbus register failed: ${r.stderr.trim().slice(0, 200)}`);
 }
 
 // src/audit.ts
@@ -1072,6 +1027,8 @@ function bindingOf(e) {
 var PendingRuns = class {
   map = /* @__PURE__ */ new Map();
   await(runId, binding, deps = {}) {
+    const live = this.map.get(runId);
+    if (live) return live.promise;
     const schedule = deps.schedule ?? defaultSchedule;
     const promise = new Promise((resolve3, reject) => {
       const cancelTimer = schedule(() => {
@@ -1080,7 +1037,7 @@ var PendingRuns = class {
       }, binding.ceilingMs);
       const entry = {
         ...binding,
-        resolve: (text) => resolve3({ text }),
+        resolve: resolve3,
         reject,
         cancelTimer,
         promise: void 0
@@ -1104,12 +1061,16 @@ var PendingRuns = class {
     const e = this.map.get(runId);
     if (e) e.surfaceRef = surfaceRef;
   }
-  resolveResult(runId, text) {
+  resolveResult(runId, text, data, error) {
     const e = this.map.get(runId);
     if (!e) return false;
     this.map.delete(runId);
     e.cancelTimer();
-    e.resolve(text);
+    e.resolve({
+      text,
+      ...data !== void 0 ? { data } : {},
+      ...error !== void 0 ? { error } : {}
+    });
     return true;
   }
   cancel(runId) {
@@ -1337,8 +1298,11 @@ async function handleEnvelope(env, deps) {
   }
   if (type === "result") {
     const text = typeof env.payload["text"] === "string" ? env.payload["text"] : "";
+    const data = env.payload["data"];
+    const error = typeof env.payload["error"] === "string" ? env.payload["error"] : void 0;
+    if (error !== void 0) deps.log.warn("surfaced run reported a failure result", { runId, error });
     if (pendingBinding) {
-      deps.pending.resolveResult(runId, text);
+      deps.pending.resolveResult(runId, text, data, error);
     } else {
       await makeReplier(deps.poster, binding.channel, binding.threadTs).say(text);
     }
@@ -1805,13 +1769,14 @@ var Dispatcher = class {
   }
   launchSurfaced(req, replier, decision) {
     const runId = this.deps.newRunId();
+    const binding = { channel: req.channel, threadTs: req.threadTs };
     const adapter = this.deps.makeSurfaceAdapter(
       runId,
+      binding,
       (surfaceRef) => this.deps.residents.add({ runId, surfaceRef, channel: req.channel, threadTs: req.threadTs })
     );
     const awaited = this.deps.pending.await(runId, {
-      channel: req.channel,
-      threadTs: req.threadTs,
+      ...binding,
       ceilingMs: this.deps.surfaceCeilingMs
     });
     const options = {
@@ -1970,9 +1935,12 @@ function createNagi(options) {
     const approvals = new ApprovalRegistry();
     const pending = new PendingRuns();
     const residents = new ResidentSessions();
-    const makeSurfaceAdapter2 = (runId, onSurfaceRef) => makeCmuxClaudeAdapter({
+    const makeSurfaceAdapter2 = (runId, binding, onSurfaceRef) => makeCmuxClaudeAdapter({
       nagiInstance: NAGI_INSTANCE,
-      newRunId: () => runId,
+      newRunId: () => {
+        pending.await(runId, { ...binding, ceilingMs: SURFACE_CEILING_MS });
+        return runId;
+      },
       awaitResult: () => pending.awaitExisting(runId),
       onSurface: (surface) => {
         if (surface.ref) {
@@ -1989,7 +1957,7 @@ function createNagi(options) {
       if (config.cmux?.socketPath) args.push("--socket", config.cmux.socketPath);
       if (config.cmux?.password) args.push("--password", config.cmux.password);
       args.push("close-surface", surfaceRef);
-      await runProcess2("cmux", args);
+      await runProcess("cmux", args);
     };
     const cmuxHost = makeCmuxHost({
       ...config.cmux?.socketPath ? { socketPath: config.cmux.socketPath } : {},

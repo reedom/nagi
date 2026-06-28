@@ -45,8 +45,16 @@ export interface DispatcherDeps {
   /** Kills the active run's process tree; returns how many processes were signalled. */
   cancelActiveRun: () => number;
   pending: PendingRuns;
-  /** Builds a per-run cmux adapter; onSurfaceRef fires with the surface ref once launched. */
-  makeSurfaceAdapter: (runId: string, onSurfaceRef?: (surfaceRef: string) => void) => CliAdapter;
+  /**
+   * Builds a per-run cmux adapter bound to the run's Slack thread; onSurfaceRef fires
+   * with the surface ref once launched. The binding lets the adapter re-arm a pending
+   * wait per surfaced agent, so one run can drive many sequential agents.
+   */
+  makeSurfaceAdapter: (
+    runId: string,
+    binding: { channel: string; threadTs: string },
+    onSurfaceRef?: (surfaceRef: string) => void,
+  ) => CliAdapter;
   /** Live registry of resident agents (thread-addressed). */
   residents: ResidentSessions;
   /** Drives a live surface's REPL (send text / submit). */
@@ -260,12 +268,15 @@ export class Dispatcher {
     decision: Extract<ReturnType<typeof decide>, { kind: 'dispatch' }>,
   ): void {
     const runId = this.deps.newRunId();
-    const adapter = this.deps.makeSurfaceAdapter(runId, (surfaceRef) =>
+    const binding = { channel: req.channel, threadTs: req.threadTs };
+    const adapter = this.deps.makeSurfaceAdapter(runId, binding, (surfaceRef) =>
       this.deps.residents.add({ runId, surfaceRef, channel: req.channel, threadTs: req.threadTs }),
     );
+    // Pre-arm the first wait so the bridge can route the first agent's progress/approvals
+    // immediately. Subsequent agents in the same run re-arm via the adapter (idempotent
+    // while live), so a multi-step surfaced workflow runs all its agents on this one run.
     const awaited = this.deps.pending.await(runId, {
-      channel: req.channel,
-      threadTs: req.threadTs,
+      ...binding,
       ceilingMs: this.deps.surfaceCeilingMs,
     });
     const options: RunOptions = {

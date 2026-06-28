@@ -13,7 +13,7 @@ import { reviewRepo, research, surface, investigateTicket } from '../src/workflo
 
 type RunFn = (mod: WorkflowModule, opts: RunOptions) => Promise<unknown>;
 
-function surfaceHarness() {
+function surfaceHarness(over: { runWorkflowFn?: RunFn } = {}) {
   const config = testConfig();
   const registry = buildRegistry([reviewRepo, research, surface, investigateTicket], { config });
   const audit = recordingAudit();
@@ -26,10 +26,17 @@ function surfaceHarness() {
   ]);
   const gate = { post: async () => ({ ts: 'x' }), update: async () => {}, uploadSnippet: async () => {} };
   const closeSurface = vi.fn(async () => {});
-  const makeSurfaceAdapter = (runId: string, onSurfaceRef?: (surfaceRef: string) => void): CliAdapter => ({
+  const makeSurfaceAdapter = (
+    runId: string,
+    binding: { channel: string; threadTs: string },
+    onSurfaceRef?: (surfaceRef: string) => void,
+  ): CliAdapter => ({
     id: 'cmux',
     caps: { schema: false, resume: false, tools: true },
     async run(): Promise<AgentResult> {
+      // Mirror the real wiring: re-arm a pending wait per agent (idempotent while live),
+      // then block on it. This is what lets one run drive multiple surfaced agents.
+      pending.await(runId, { ...binding, ceilingMs: 10_000 });
       const surfaceRef = `workspace:${runId}`;
       pending.setSurfaceRef(runId, surfaceRef); // mimic the real onSurface -> setSurfaceRef wiring
       onSurfaceRef?.(surfaceRef);               // mimic the real onSurface -> resident promotion
@@ -39,12 +46,12 @@ function surfaceHarness() {
   });
   const residents = new ResidentSessions();
   const host = { send: vi.fn(async () => {}), sendKey: vi.fn(async () => {}) };
-  const runWorkflowFn: RunFn = async (_mod, opts) => {
+  const runWorkflowFn: RunFn = over.runWorkflowFn ?? (async (_mod, opts) => {
     const adapter = opts.adapters['cmux'];
     if (!adapter) throw new Error('no cmux adapter injected');
     const r = await adapter.run({ prompt: 't' } as never);
     return { text: r.text };
-  };
+  });
   const dispatcher = new Dispatcher({
     config,
     registry,
@@ -88,6 +95,27 @@ describe('surfaced dispatch', () => {
     for (let i = 0; i < 10; i += 1) await tick();
     expect(h.replier.said.some((s) => /the answer/.test(s))).toBe(true);
     expect(h.audit.entries.at(-1)?.outcome).toBe('resident-ready');
+  });
+
+  it('drives multiple surfaced agents on one run, re-arming the wait each step', async () => {
+    const h = surfaceHarness({
+      runWorkflowFn: async (_mod, opts) => {
+        const adapter = opts.adapters['cmux'];
+        if (!adapter) throw new Error('no cmux adapter injected');
+        const a = await adapter.run({ prompt: 'one' } as never);
+        const b = await adapter.run({ prompt: 'two' } as never);
+        return { summary: `${a.text}|${b.text}` };
+      },
+    });
+    await h.dispatcher.handle(req());
+    for (let i = 0; i < 10; i += 1) await tick();
+    expect(h.pending.active()).toEqual(['run-surf']); // step 1 awaiting
+    h.pending.resolveResult('run-surf', 'one');
+    for (let i = 0; i < 10; i += 1) await tick();
+    expect(h.pending.active()).toEqual(['run-surf']); // step 2 re-armed and awaiting
+    h.pending.resolveResult('run-surf', 'two');
+    for (let i = 0; i < 10; i += 1) await tick();
+    expect(h.replier.said.some((s) => /one\|two/.test(s))).toBe(true);
   });
 
   it('promotes a launched surface into the resident registry for its thread', async () => {
