@@ -20,8 +20,6 @@ export interface RegistryEntry {
 
 export interface NagiContext { config: NagiConfig }
 export type WorkflowFactory = (ctx: NagiContext) => RegistryEntry;
-/** @deprecated Use WorkflowFactory instead. */
-export type EntryFactory = WorkflowFactory;
 
 export class Registry {
   private readonly byId: Map<string, RegistryEntry>;
