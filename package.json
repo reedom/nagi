@@ -3,29 +3,33 @@
   "version": "0.1.0",
   "description": "AI Concierge - a Slack-driven dispatcher for ai-workflow-engine",
   "type": "module",
-  "bin": {
-    "nagi": "dist/index.js"
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" },
+    "./workflows": { "types": "./dist/workflows/index.d.ts", "default": "./dist/workflows/index.js" }
   },
+  "types": "./dist/index.d.ts",
+  "bin": { "nagi": "./dist/cli.js" },
+  "files": ["dist"],
   "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "build:deps": "pnpm -C ../ai-workflow-engine build && pnpm -C ../agent-surface-adapters build",
-    "sync:deps": "pnpm run build:deps && pnpm install",
-    "prestart": "pnpm run sync:deps",
-    "start": "node dist/index.js",
-    "dev": "tsx src/index.ts",
+    "build": "tsup",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "check:bundle": "node scripts/check-bundle.mjs"
   },
   "dependencies": {
     "@slack/bolt": "^4.2.0",
-    "agent-surface-adapters": "file:../agent-surface-adapters",
-    "ai-workflow-engine": "file:../ai-workflow-engine",
     "zod": "^3.24.1"
   },
   "devDependencies": {
+    "ai-workflow-engine": "file:../ai-workflow-engine",
+    "agent-surface-adapters": "file:../agent-surface-adapters",
+    "tsup": "^8.5.1",
     "@types/node": "^22.7.0",
     "tsx": "^4.19.0",
     "typescript": "^5.6.0",
     "vitest": "^2.1.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["esbuild"]
   }
 }
