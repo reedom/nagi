@@ -76,10 +76,20 @@ export function createNagi(options: CreateNagiOptions): NagiHandle {
     // A per-run cmux adapter: bound to nagi's chosen runId and to the pending
     // registry, so the engine's adapter.run() blocks on the SAME promise the
     // agentbus bridge resolves when the surfaced agent reports its result.
-    const makeSurfaceAdapter = (runId: string, onSurfaceRef?: (surfaceRef: string) => void) =>
+    // newRunId runs once per surfaced agent (before host.launch); re-arming the
+    // pending wait there lets ONE run drive many sequential agents (each its own
+    // surface), not just one. await() is idempotent while a wait is live.
+    const makeSurfaceAdapter = (
+      runId: string,
+      binding: { channel: string; threadTs: string },
+      onSurfaceRef?: (surfaceRef: string) => void,
+    ) =>
       makeCmuxClaudeAdapter({
         nagiInstance: NAGI_INSTANCE,
-        newRunId: () => runId,
+        newRunId: () => {
+          pending.await(runId, { ...binding, ceilingMs: SURFACE_CEILING_MS });
+          return runId;
+        },
         awaitResult: () => pending.awaitExisting(runId),
         onSurface: (surface) => {
           if (surface.ref) {

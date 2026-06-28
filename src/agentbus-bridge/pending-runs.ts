@@ -11,11 +11,17 @@ const defaultSchedule: Schedule = (fn, ms) => {
   return () => clearTimeout(t);
 };
 
+/** Result of a surfaced run: the agent's final text, plus structured `data` when a schema was declared. */
+export interface RunResult {
+  text: string;
+  data?: unknown;
+}
+
 interface Entry extends RunBinding {
-  resolve: (text: string) => void;
+  resolve: (result: RunResult) => void;
   reject: (reason: Error) => void;
   cancelTimer: () => void;
-  promise: Promise<{ text: string }>;
+  promise: Promise<RunResult>;
 }
 
 function bindingOf(e: Entry): RunBinding {
@@ -28,19 +34,25 @@ function bindingOf(e: Entry): RunBinding {
 export class PendingRuns {
   private readonly map = new Map<string, Entry>();
 
-  await(runId: string, binding: RunBinding, deps: { schedule?: Schedule } = {}): Promise<{ text: string }> {
+  await(runId: string, binding: RunBinding, deps: { schedule?: Schedule } = {}): Promise<RunResult> {
+    // Idempotent re-arm: while a run's entry is live, return its existing promise
+    // instead of registering a second one. This lets a surfaced workflow drive many
+    // sequential agents on ONE run — the per-step launch calls await() again, which
+    // is a no-op until resolveResult() clears the entry, then re-arms a fresh wait.
+    const live = this.map.get(runId);
+    if (live) return live.promise;
     const schedule = deps.schedule ?? defaultSchedule;
-    const promise = new Promise<{ text: string }>((resolve, reject) => {
+    const promise = new Promise<RunResult>((resolve, reject) => {
       const cancelTimer = schedule(() => {
         this.map.delete(runId);
         reject(new Error('surfaced run exceeded its wait ceiling'));
       }, binding.ceilingMs);
       const entry: Entry = {
         ...binding,
-        resolve: (text) => resolve({ text }),
+        resolve,
         reject,
         cancelTimer,
-        promise: undefined as unknown as Promise<{ text: string }>,
+        promise: undefined as unknown as Promise<RunResult>,
       };
       this.map.set(runId, entry);
     });
@@ -65,12 +77,12 @@ export class PendingRuns {
     if (e) e.surfaceRef = surfaceRef;
   }
 
-  resolveResult(runId: string, text: string): boolean {
+  resolveResult(runId: string, text: string, data?: unknown): boolean {
     const e = this.map.get(runId);
     if (!e) return false;
     this.map.delete(runId);
     e.cancelTimer();
-    e.resolve(text);
+    e.resolve({ text, ...(data !== undefined ? { data } : {}) });
     return true;
   }
 

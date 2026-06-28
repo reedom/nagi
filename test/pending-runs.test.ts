@@ -38,6 +38,20 @@ describe('PendingRuns', () => {
     await expect(a).resolves.toEqual({ text: 'yo' });
     await expect(b).resolves.toEqual({ text: 'yo' });
   });
+  it('re-arms: await is idempotent while live, and fresh after resolveResult', async () => {
+    const p = new PendingRuns();
+    const never = { schedule: (_f: () => void, _m: number) => () => {} };
+    const a = p.await('r', { channel: 'C', threadTs: '1', ceilingMs: 1000 }, never);
+    const again = p.await('r', { channel: 'C', threadTs: '1', ceilingMs: 1000 }, never);
+    expect(again).toBe(a); // same promise while a wait is live (no double registration)
+    p.resolveResult('r', 'first');
+    await expect(a).resolves.toEqual({ text: 'first' });
+    const b = p.await('r', { channel: 'C', threadTs: '1', ceilingMs: 1000 }, never);
+    expect(b).not.toBe(a); // a brand-new wait after the previous one resolved
+    p.resolveResult('r', 'second');
+    await expect(b).resolves.toEqual({ text: 'second' });
+  });
+
   it('awaitExisting rejects for an unknown run', async () => {
     const p = new PendingRuns();
     await expect(p.awaitExisting('nope')).rejects.toThrow(/no pending run/);

@@ -34,6 +34,16 @@ describe('handleEnvelope', () => {
     await expect(awaited).resolves.toEqual({ text: 'done' });
   });
 
+  it('carries structured data from a schema-validated result envelope', async () => {
+    const d = deps();
+    const awaited = d.pending.await('r2d', { channel: 'C', threadTs: 'T2d', ceilingMs: 1000 }, never);
+    await handleEnvelope(
+      { id: 'm', kind: 'message', from: 'ext:awe-r2d', payload: { type: 'result', runId: 'r2d', text: '{"ok":true}', data: { ok: true } } },
+      d.base,
+    );
+    await expect(awaited).resolves.toEqual({ text: '{"ok":true}', data: { ok: true } });
+  });
+
   it('posts an approval and replies after a button resolves it', async () => {
     const d = deps();
     void d.pending.await('r3', { channel: 'C', threadTs: 'T3', ceilingMs: 1000 }, never).catch(() => {});

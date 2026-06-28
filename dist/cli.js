@@ -3,13 +3,15 @@ import {
   createNagi,
   loadDotenv,
   logger
-} from "./chunk-HEDCOLKS.js";
+} from "./chunk-32TO4MSM.js";
 import {
   investigateTicket,
   researchEntry,
   reviewRepoEntry,
   surfaceEntry
 } from "./chunk-S345XOLX.js";
+import "./chunk-MXPDRPU6.js";
+import "./chunk-ZO2TLVOL.js";
 
 // src/cli.ts
 loadDotenv();
