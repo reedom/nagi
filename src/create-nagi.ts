@@ -87,7 +87,11 @@ export function createNagi(options: CreateNagiOptions): NagiHandle {
       makeCmuxClaudeAdapter({
         nagiInstance: NAGI_INSTANCE,
         newRunId: () => {
-          pending.await(runId, { ...binding, ceilingMs: SURFACE_CEILING_MS });
+          // Mirror the dispatcher's observed pre-arm (see dispatcher.ts): a re-armed
+          // wait is a fresh promise that can reject (ceiling or cancel) before
+          // awaitResult() observes it, so keep it referenced to avoid an unhandled
+          // rejection if surface launch aborts between newRunId and awaitResult.
+          void pending.await(runId, { ...binding, ceilingMs: SURFACE_CEILING_MS }).catch(() => {});
           return runId;
         },
         awaitResult: () => pending.awaitExisting(runId),
