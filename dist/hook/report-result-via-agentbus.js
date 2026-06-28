@@ -11,11 +11,17 @@ import { dirname, join } from "path";
 import { pathToFileURL } from "url";
 
 // node_modules/.pnpm/agent-surface-adapters@file+..+agent-surface-adapters/node_modules/agent-surface-adapters/dist/core/validate.js
+var KNOWN_TYPES = /* @__PURE__ */ new Set(["string", "number", "integer", "boolean", "object", "array"]);
 function extractJsonObject(text) {
   const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
   const body = fenced?.[1] ?? text;
-  const start = body.indexOf("{");
-  const end = body.lastIndexOf("}");
+  const objStart = body.indexOf("{");
+  const arrStart = body.indexOf("[");
+  const useArray = arrStart !== -1 && (objStart === -1 || arrStart < objStart);
+  const open = useArray ? "[" : "{";
+  const close = useArray ? "]" : "}";
+  const start = body.indexOf(open);
+  const end = body.lastIndexOf(close);
   if (start === -1 || end === -1 || end < start)
     return void 0;
   try {
@@ -47,6 +53,9 @@ function typeOk(value, type) {
 function validateAgainstSchema(value, schema, path = "") {
   const where = path === "" ? "(root)" : path;
   const errors = [];
+  if (schema.type !== void 0 && !KNOWN_TYPES.has(schema.type)) {
+    return { ok: false, errors: [`${where}: unsupported schema type "${schema.type}"`] };
+  }
   if (!typeOk(value, schema.type)) {
     return { ok: false, errors: [`${where}: expected ${schema.type}`] };
   }
@@ -84,18 +93,17 @@ function defaultReadSchema(schemaPath) {
     return null;
   }
 }
-function attemptsFile(runDir) {
-  return join(runDir, "repair-attempts");
+function attemptsPath(runDir, key) {
+  return join(runDir, `repair-attempts-${key}`);
 }
-function defaultReadAttempts(runDir) {
-  const p = attemptsFile(runDir);
-  if (!existsSync(p))
+function defaultReadAttempts(path) {
+  if (!existsSync(path))
     return 0;
-  const n = Number.parseInt(readFileSync(p, "utf8").trim(), 10);
-  return Number.isFinite(n) ? n : 0;
+  const n = Number.parseInt(readFileSync(path, "utf8").trim(), 10);
+  return Number.isFinite(n) ? n : Number.MAX_SAFE_INTEGER;
 }
-function defaultWriteAttempts(runDir, n) {
-  writeFileSync(attemptsFile(runDir), String(n));
+function defaultWriteAttempts(path, n) {
+  writeFileSync(path, String(n));
 }
 var defaultSleep = (ms) => new Promise((r) => setTimeout(r, ms));
 function takeArg(argv, name) {
@@ -173,7 +181,12 @@ async function runResultHook(argv, stdinJson, deps = {}) {
   const readSchema = deps.readSchema ?? defaultReadSchema;
   const schema = readSchema(meta.schemaPath);
   if (!schema) {
-    await send2(meta.nagiInstance, from, { type: "result", runId: meta.runId, text: finalText });
+    await send2(meta.nagiInstance, from, {
+      type: "result",
+      runId: meta.runId,
+      text: finalText,
+      error: `declared schema could not be read: ${meta.schemaPath}`
+    });
     return JSON.stringify({});
   }
   const data = extractJsonObject(finalText);
@@ -183,21 +196,21 @@ async function runResultHook(argv, stdinJson, deps = {}) {
     return JSON.stringify({});
   }
   const runDir = dirname(metaPath);
+  const apath = attemptsPath(runDir, meta.sessionId ?? meta.runId);
   const readAttempts = deps.readAttempts ?? defaultReadAttempts;
   const writeAttempts = deps.writeAttempts ?? defaultWriteAttempts;
-  const attempt = readAttempts(runDir);
-  const max = typeof meta.maxRepairs === "number" ? meta.maxRepairs : DEFAULT_MAX_REPAIRS;
+  const attempt = readAttempts(apath);
+  const declaredMax = meta.maxRepairs;
+  const max = typeof declaredMax === "number" && Number.isInteger(declaredMax) && 0 <= declaredMax ? declaredMax : DEFAULT_MAX_REPAIRS;
   if (attempt < max) {
-    writeAttempts(runDir, attempt + 1);
+    writeAttempts(apath, attempt + 1);
+    const feedback = `Your final message must be ONLY a JSON object matching the required schema, with no prose or code fences. Validation errors:
+- ${validation.errors.join("\n- ")}
+Re-output the corrected JSON object as your final message now.`;
     return JSON.stringify({
       decision: "block",
-      reason: "structured result did not match the required schema",
-      hookSpecificOutput: {
-        hookEventName: "Stop",
-        additionalContext: `Your final message must be ONLY a JSON object matching the required schema, with no prose or code fences. Validation errors:
-- ${validation.errors.join("\n- ")}
-Re-output the corrected JSON object as your final message now.`
-      }
+      reason: feedback,
+      hookSpecificOutput: { hookEventName: "Stop", additionalContext: feedback }
     });
   }
   await send2(meta.nagiInstance, from, {

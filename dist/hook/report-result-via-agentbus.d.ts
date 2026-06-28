@@ -1,5 +1,6 @@
+type JsonSchemaType = 'string' | 'number' | 'integer' | 'boolean' | 'object' | 'array';
 interface JsonSchema {
-    type?: string;
+    type?: JsonSchemaType;
     properties?: Record<string, JsonSchema>;
     required?: string[];
     enum?: unknown[];
@@ -15,9 +16,9 @@ interface ResultHookDeps {
     sleep?: (ms: number) => Promise<void>;
     /** Test seam: read the declared JSON Schema from its file. */
     readSchema?: (schemaPath: string) => JsonSchema | null;
-    /** Test seams for the per-run repair-attempt counter. */
-    readAttempts?: (runDir: string) => number;
-    writeAttempts?: (runDir: string, n: number) => void;
+    /** Test seams for the per-step repair-attempt counter (keyed by the attempts file path). */
+    readAttempts?: (path: string) => number;
+    writeAttempts?: (path: string, n: number) => void;
 }
 /** Text of the last assistant message in a Claude Code JSONL transcript, or null. */
 declare function lastAssistantText(transcriptPath: string): string | null;

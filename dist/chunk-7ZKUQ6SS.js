@@ -736,6 +736,8 @@ ${schemaDirective(spec.schema)}` : agentbusDirective(runId, nagiInstance);
       const surface = await deps.host.launch({ cwd: spec.cwd, command: `bash ${shellQuote(scriptPath)}` });
       deps.onSurface?.(surface);
       const result = await deps.awaitResult(runId);
+      if (result.error !== void 0)
+        throw new Error(result.error);
       const usage = deps.agent.readUsage(sessionId, spec.cwd) ?? { inputTokens: 0, outputTokens: 0 };
       return {
         text: result.text,
@@ -1059,12 +1061,16 @@ var PendingRuns = class {
     const e = this.map.get(runId);
     if (e) e.surfaceRef = surfaceRef;
   }
-  resolveResult(runId, text, data) {
+  resolveResult(runId, text, data, error) {
     const e = this.map.get(runId);
     if (!e) return false;
     this.map.delete(runId);
     e.cancelTimer();
-    e.resolve({ text, ...data !== void 0 ? { data } : {} });
+    e.resolve({
+      text,
+      ...data !== void 0 ? { data } : {},
+      ...error !== void 0 ? { error } : {}
+    });
     return true;
   }
   cancel(runId) {
@@ -1293,8 +1299,10 @@ async function handleEnvelope(env, deps) {
   if (type === "result") {
     const text = typeof env.payload["text"] === "string" ? env.payload["text"] : "";
     const data = env.payload["data"];
+    const error = typeof env.payload["error"] === "string" ? env.payload["error"] : void 0;
+    if (error !== void 0) deps.log.warn("surfaced run reported a failure result", { runId, error });
     if (pendingBinding) {
-      deps.pending.resolveResult(runId, text, data);
+      deps.pending.resolveResult(runId, text, data, error);
     } else {
       await makeReplier(deps.poster, binding.channel, binding.threadTs).say(text);
     }

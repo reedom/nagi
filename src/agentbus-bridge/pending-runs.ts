@@ -11,10 +11,15 @@ const defaultSchedule: Schedule = (fn, ms) => {
   return () => clearTimeout(t);
 };
 
-/** Result of a surfaced run: the agent's final text, plus structured `data` when a schema was declared. */
+/**
+ * Result of a surfaced run: the agent's final text, plus structured `data` when a
+ * schema was declared and validated. `error` is set when the surfaced agent reported a
+ * failure (e.g. schema validation failed after all repairs) so the cause is not lost.
+ */
 export interface RunResult {
   text: string;
   data?: unknown;
+  error?: string;
 }
 
 interface Entry extends RunBinding {
@@ -61,7 +66,7 @@ export class PendingRuns {
     return promise;
   }
 
-  awaitExisting(runId: string): Promise<{ text: string }> {
+  awaitExisting(runId: string): Promise<RunResult> {
     const e = this.map.get(runId);
     if (!e) return Promise.reject(new Error(`no pending run ${runId}`));
     return e.promise;
@@ -77,12 +82,16 @@ export class PendingRuns {
     if (e) e.surfaceRef = surfaceRef;
   }
 
-  resolveResult(runId: string, text: string, data?: unknown): boolean {
+  resolveResult(runId: string, text: string, data?: unknown, error?: string): boolean {
     const e = this.map.get(runId);
     if (!e) return false;
     this.map.delete(runId);
     e.cancelTimer();
-    e.resolve({ text, ...(data !== undefined ? { data } : {}) });
+    e.resolve({
+      text,
+      ...(data !== undefined ? { data } : {}),
+      ...(error !== undefined ? { error } : {}),
+    });
     return true;
   }
 

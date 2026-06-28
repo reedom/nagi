@@ -81,9 +81,9 @@ The surfaced lane has no native structured-output flag (that is a headless `clau
 
 - **valid** → sends `{ type: 'result', runId, text, data }` and allows the stop;
 - **invalid, under the cap** → returns `{ decision: 'block', ..., hookSpecificOutput.additionalContext }` so the agent stays on the surface and repairs, bounded by a per-run repair-attempt counter (`maxRepairs`, default 3);
-- **invalid, cap reached** → sends a result with an `error` (no `data`) so the run still unblocks; the workflow's own schema parse surfaces the failure.
+- **invalid, cap reached** → sends a result with an `error` (no `data`) so the run still unblocks. The bridge carries `error` through `resolveResult` into `RunResult` (and warn-logs it), and the surface adapter throws it, so the workflow step fails with the real cause rather than a downstream undefined-`data` artifact.
 
-So validation and the repair loop live in the harness (the hook), not the model. Steps without a schema (the seed `surface`, free-text steps) keep the plain text-reporting path.
+So validation and the repair loop live in the harness (the hook), not the model. The per-step repair counter is keyed by `sessionId` (fresh per step) so each step of a multi-step run gets its own repair budget. Steps without a schema (the seed `surface`, free-text steps) keep the plain text-reporting path.
 
 ### Post-result resident handoff
 

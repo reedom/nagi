@@ -72,9 +72,11 @@ export async function handleEnvelope(env: Envelope, deps: BridgeDeps): Promise<v
   if (type === 'result') {
     const text = typeof env.payload['text'] === 'string' ? env.payload['text'] : '';
     const data = env.payload['data']; // present when the surfaced agent reported a schema-validated result
+    const error = typeof env.payload['error'] === 'string' ? env.payload['error'] : undefined;
+    if (error !== undefined) deps.log.warn('surfaced run reported a failure result', { runId, error });
     if (pendingBinding) {
       // Turn 1: unblock the engine's run(); the dispatcher posts this result.
-      deps.pending.resolveResult(runId, text, data);
+      deps.pending.resolveResult(runId, text, data, error);
     } else {
       // Turn 2+: no pending await — post the resident's output to its thread.
       await makeReplier(deps.poster, binding.channel, binding.threadTs).say(text);
