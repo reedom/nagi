@@ -104,6 +104,6 @@ The plist runs `node dist/index.js` with `RunAtLoad` and `KeepAlive` both `true`
 
 ## Traceability
 
-- **Design**: see `docs/tohru.hanai-main-design-20260611-235421.md` — decision 6A (crash recovery is fail-fast + launchd `KeepAlive`: any unhandled fault exits non-zero and a clean process is restarted; in-memory queue loss on restart is accepted for v1, audit-log replay deferred to v1.5). README "Always-on (launchd)" documents the same operational contract.
+- **Design decisions**: 6A (crash recovery is fail-fast + launchd `KeepAlive`: any unhandled fault exits non-zero and a clean process is restarted; in-memory queue loss on restart is accepted for v1, audit-log replay deferred to v1.5). README "Always-on (launchd)" documents the same operational contract.
 - **Modules**: `src/index.ts` (`main` composition root, the timing constants, fail-fast handlers, inbox pump, sweep), `src/logger.ts` (structured stderr `logger`), `src/util/id.ts` (`newId`), `src/util/timeout.ts` (`withTimeout`/`TimeoutError`), `deploy/com.reedom.nagi.plist` (launchd agent).
 - **Related FR**: [10-configuration](10-configuration.md) is loaded first in `main` and is the unit a restart re-reads; [01-slack-front-door](01-slack-front-door.md) is the last thing `main` starts and the live event loop the process runs in; [12-agentbus-surfaced-lane](12-agentbus-surfaced-lane.md) is the registration + inbox pump `main` stands up and the consumer of `SURFACE_CEILING_MS`.

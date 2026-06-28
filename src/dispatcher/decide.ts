@@ -1,5 +1,5 @@
 import type { ZodError } from 'zod';
-import { repoAliases, type NagiConfig } from '../config.js';
+import type { NagiConfig } from '../config.js';
 import type { Registry, RegistryEntry } from '../registry/index.js';
 import type { TriageResult } from '../triage/schema.js';
 
@@ -30,18 +30,12 @@ export function decide(config: NagiConfig, registry: Registry, triage: TriageRes
 
   const parsed = entry.argsSchema.safeParse(triage.args);
   if (!parsed.success) {
-    return { kind: 'clarify', question: schemaQuestion(parsed.error, config) };
+    return { kind: 'clarify', question: schemaQuestion(parsed.error) };
   }
 
   const args = parsed.data as Record<string, unknown>;
-  const cwd = resolveCwd(config, args);
   const budget = entry.budgetOverride ?? config.defaultBudget;
-  return { kind: 'dispatch', entry, args, ...(cwd ? { cwd } : {}), budget };
-}
-
-function resolveCwd(config: NagiConfig, args: Record<string, unknown>): string | undefined {
-  const repo = args['repo'];
-  return typeof repo === 'string' ? config.repos[repo] : undefined;
+  return { kind: 'dispatch', entry, args, budget };
 }
 
 function chooseWorkflowQuestion(registry: Registry): string {
@@ -49,13 +43,8 @@ function chooseWorkflowQuestion(registry: Registry): string {
   return `I'm not sure which workflow fits. I can run:\n${options}\nWhich would you like, and with what details?`;
 }
 
-function schemaQuestion(error: ZodError, config: NagiConfig): string {
+function schemaQuestion(error: ZodError): string {
   const issue = error.issues[0];
   const field = issue && issue.path.length !== 0 ? String(issue.path[0]) : 'an argument';
-  if (field === 'repo') {
-    const aliases = repoAliases(config);
-    const list = aliases.length === 0 ? '(none configured)' : aliases.join(', ');
-    return `I couldn't match that to a known repo. Valid repos: ${list}. Which one?`;
-  }
   return `I need a clearer value for \`${field}\` (${issue?.message ?? 'invalid'}). Could you restate it?`;
 }

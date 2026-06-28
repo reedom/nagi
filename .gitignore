@@ -6,3 +6,9 @@ dist/
 nagi.config.json
 .omc/
 audit.jsonl
+
+.lavish/
+
+# superpowers / gstack temp planning + scratch (never tracked)
+docs/superpowers/
+.superpowers/

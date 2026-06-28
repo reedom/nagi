@@ -7,7 +7,6 @@ import { makeThreadStore } from '../src/thread-state.js';
 import { ApprovalRegistry } from '../src/escalation/approval-registry.js';
 import { PendingRuns } from '../src/agentbus-bridge/pending-runs.js';
 import { ResidentSessions } from '../src/residents/resident-sessions.js';
-import { repoAliases } from '../src/config.js';
 import type { RequestContext } from '../src/types.js';
 import {
   deferred,
@@ -38,7 +37,7 @@ function harness(triageData: Array<Record<string, unknown>>, runWorkflowFn?: Run
   const dispatcher = new Dispatcher({
     config,
     registry,
-    triage: { adapter, policy: config.triage, registry, aliases: repoAliases(config), log: silentLogger },
+    triage: { adapter, policy: config.triage, registry, log: silentLogger },
     adapters: { claude: adapter, codex: adapter },
     audit,
     queue,
@@ -95,7 +94,7 @@ describe('Dispatcher', () => {
     const h = harness(
       [
         { workflowId: 'review-repo', args: {}, confidence: 0.2 },
-        { workflowId: 'review-repo', args: { repo: 'engine', scope: 'repo' }, confidence: 0.95 },
+        { workflowId: 'review-repo', args: { repoHint: 'engine', scope: 'repo' }, confidence: 0.95 },
       ],
       async () => ({ summary: 'reviewed' }),
     );
@@ -117,7 +116,7 @@ describe('Dispatcher', () => {
       return { summary: 'reviewed: looks fine' };
     };
     const h = harness(
-      [{ workflowId: 'review-repo', args: { repo: 'engine', scope: 'repo' }, confidence: 0.95 }],
+      [{ workflowId: 'review-repo', args: { repoHint: 'engine', scope: 'repo' }, confidence: 0.95 }],
       runFn,
     );
     await h.dispatcher.handle(req());
@@ -125,7 +124,6 @@ describe('Dispatcher', () => {
     expect(h.replier.said[0]).toMatch(/On it.*review-repo/);
     expect(h.replier.said.at(-1)).toBe('reviewed: looks fine');
     expect(captured?.mod).toBe(h.registry.get('review-repo')?.module);
-    expect(captured?.opts.cwd).toBe('/tmp/engine');
     expect(captured?.opts.budget).toBe(100_000);
     expect(captured?.opts.escalation?.channel.id).toBe('slack');
     const outcomes = h.audit.entries.map((e) => e.outcome);

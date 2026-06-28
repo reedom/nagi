@@ -138,11 +138,7 @@ policy live in [08-escalation-approvals](08-escalation-approvals.md).
 
 ## Traceability
 
-- **Design**: `docs/tohru.hanai-main-design-20260611-235421.md` — the `slack/`
-  module description (app-mention/DM → `RequestContext`), the socket-mode +
-  app-level-token decision, and the Block Kit Approve/Deny approach bound to a
-  request id (decision D11); thread replies feed clarification only, never
-  approvals (D11). Archival design pointer, not a graph node.
+- **Design decisions**: the `slack/` module description (app-mention/DM → `RequestContext`), the socket-mode + app-level-token decision, and the Block Kit Approve/Deny approach bound to a request id (decision D11); thread replies feed clarification only, never approvals (D11).
 - **Modules**: `src/slack/` (`app.ts`, `ports.ts`) and `src/types.ts`
   (`RequestContext`, `ThreadReplier`).
 - **Related FR**:

@@ -3,10 +3,10 @@
     "allowedTeamId": "T0123456789",
     "allowedUserIds": ["U0123456789"]
   },
-  "repos": {
-    "engine": "/Users/you/src/ai-workflow-engine",
-    "web": "/Users/you/src/web"
-  },
+  "repoScopes": ["github.com/acme/*", "github.com/reedom/*"],
+  "learnedReposPath": "./learned-repos.json",
+  "maxRepos": 10,
+  "worktree": { "script": "scripts/worktree-provision.worktrunk.sh" },
   "triage": {
     "model": "claude-sonnet-4-6",
     "confidenceThreshold": 0.6,

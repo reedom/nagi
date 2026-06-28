@@ -20,7 +20,7 @@ refs:
 
 ## Purpose
 
-nagi splits its inputs cleanly: a JSON **config file** holds everything an operator tunes (workspace pin, user allowlist, repo aliases, triage policy, budget, audit path), while **secrets** (Slack tokens) come from the environment. The split is deliberate — the audit log records identities, not credentials (D14), so tokens must never land in a file that could be committed or logged. `src/config.ts` is the single validated `NagiConfig` object the rest of the daemon reads; `src/util/env.ts` seeds `process.env` from an optional `.env` before secrets are read.
+nagi splits its inputs cleanly: a JSON **config file** holds everything an operator tunes (workspace pin, user allowlist, repo scope allowlist, triage policy, budget, audit path), while **secrets** (Slack tokens) come from the environment. The split is deliberate — the audit log records identities, not credentials (D14), so tokens must never land in a file that could be committed or logged. `src/config.ts` is the single validated `NagiConfig` object the rest of the daemon reads; `src/util/env.ts` seeds `process.env` from an optional `.env` before secrets are read.
 
 ## User-visible Behavior
 
@@ -41,7 +41,10 @@ Validated by `configSchema` in `src/config.ts`. Every field below is what the co
 | --- | --- | --- | --- |
 | `slack.allowedTeamId` | `string` (non-empty) | required | Slack workspace/team id the auth gate pins to (D14). See [02-authorization](02-authorization.md). |
 | `slack.allowedUserIds` | `string[]` (≥1, non-empty entries) | required | User-id allowlist; only these users may drive nagi (D14). See [02-authorization](02-authorization.md). |
-| `repos` | `Record<string, string>` (values must be absolute paths) | required | Alias → absolute-path map. A non-absolute value fails validation with `repo path must be absolute`. The alias **names** become the repo enum (D13). See [04-workflow-registry](04-workflow-registry.md). |
+| `repoScopes` | `string[]` (≥1, non-empty entries) | required | Host/owner glob allowlist. Only ghq repos whose path segment matches one of these prefix globs may be touched by an agent (security boundary). |
+| `learnedReposPath` | `string` | `./learned-repos.json` | Path of the JSON file where ticket→repo-graph resolutions are persisted across runs. |
+| `maxRepos` | `int` (positive) | `10` | Upper bound on how many repos a single ticket's dependency graph may grow to; protects against runaway graph expansion. |
+| `worktree.script` | `string` (non-empty) | `scripts/worktree-provision.worktrunk.sh` | Script nagi invokes to create or enter a per-ticket worktree. Swapping this value selects the mechanism (worktrunk, plain git, or a custom script) without editing shipped files. The script runs with `cwd = repoPath`, `argv[1] = ticket`, and `NAGI_TICKET`/`NAGI_REPO_PATH` in the environment; it must print the worktree's absolute path as its final stdout line. |
 | `triage.model` | `string` (non-empty) | `claude-sonnet-4-6` | Model the triage call uses. See [03-triage](03-triage.md). |
 | `triage.confidenceThreshold` | `number` (0–1) | `0.6` | Below this, triage posts a clarification instead of dispatching. |
 | `triage.timeoutMs` | `int` (positive) | `60000` | Timeout for the triage call (its own runtime policy, escalation disabled). |
@@ -53,10 +56,6 @@ Validated by `configSchema` in `src/config.ts`. Every field below is what the co
 | `cmux.window` | `string` (non-empty) | _omitted_ | Optional explicit cmux window. |
 
 `triage` itself defaults to `{}` (so all four sub-keys default individually), and the whole `cmux` block is optional.
-
-### The `repos` alias map and `repoAliases` (D13)
-
-`repos` is a name → absolute-path map, not a list of free-form paths — free-form paths are unrepresentable in workflow arg schemas (D13). `repoAliases(config)` returns `Object.keys(config.repos)`; this list is what the registry turns into the `repoEnum` arg constraint ([04-workflow-registry](04-workflow-registry.md)) and what dispatch uses to resolve an alias back to a `cwd`.
 
 ### The optional `cmux` block
 
@@ -76,8 +75,9 @@ When `cmux` is omitted, the host runs `cmux` with no `--socket`/`--password` and
 ## Capabilities
 
 - One validated `NagiConfig` object the whole daemon reads, with sensible defaults for triage, budget, and audit path.
-- Repo aliases that both constrain workflow args (D13) and resolve to working directories.
-- Strict absolute-path validation for every configured repo.
+- A `repoScopes` allowlist that enforces the security boundary: only ghq repos matching a configured host/owner glob prefix may be touched by an agent.
+- Configurable learned-repos persistence path and repo-graph size cap (`learnedReposPath`, `maxRepos`).
+- A swappable worktree provisioner script (`worktree.script`) that selects the mechanism (worktrunk, plain git, or custom) via a config value rather than a file edit.
 - Optional explicit cmux access for the surfaced lane without forcing the password into the file.
 - Secrets sourced from the environment, optionally seeded from a `.env` file via `NAGI_ENV_FILE`.
 
@@ -90,6 +90,6 @@ When `cmux` is omitted, the host runs `cmux` with no `--socket`/`--password` and
 
 ## Traceability
 
-- **Design**: see `docs/tohru.hanai-main-design-20260611-235421.md` — D13 (repo references as a configured alias map, name → absolute path; free-form paths unrepresentable) and D14 (append-only JSONL audit log plus team-ID pin and user allowlist; the audit trail records identities, not credentials, which is why secrets stay in the environment).
-- **Modules**: `src/config.ts` (`configSchema`/`NagiConfig`, `loadConfig`, `loadSecrets`, `repoAliases`), `src/util/env.ts` (`loadDotenv`).
-- **Related FR**: [02-authorization](02-authorization.md) consumes `slack.allowedTeamId`/`allowedUserIds`; [03-triage](03-triage.md) consumes the `triage.*` block; [04-workflow-registry](04-workflow-registry.md) consumes the repo aliases and `defaultBudget`; [11-daemon-lifecycle](11-daemon-lifecycle.md) loads config/secrets at startup and is the unit restarted to apply changes.
+- **Design decisions**: D14 (append-only JSONL audit log plus team-ID pin and user allowlist; the audit trail records identities, not credentials, which is why secrets stay in the environment); R2 (scope allowlist as the security boundary), R5 (learned-repos JSON persistence), R8 (swappable worktree provisioner script), R10 (`maxRepos` cap).
+- **Modules**: `src/config.ts` (`configSchema`/`NagiConfig`, `loadConfig`, `loadSecrets`), `src/util/env.ts` (`loadDotenv`).
+- **Related FR**: [02-authorization](02-authorization.md) consumes `slack.allowedTeamId`/`allowedUserIds`; [03-triage](03-triage.md) consumes the `triage.*` block; [04-workflow-registry](04-workflow-registry.md) consumes `repoScopes`, `learnedReposPath`, `maxRepos`, `worktree.script`, and `defaultBudget`; [11-daemon-lifecycle](11-daemon-lifecycle.md) loads config/secrets at startup and is the unit restarted to apply changes.

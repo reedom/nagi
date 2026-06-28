@@ -63,23 +63,21 @@ The system prompt is built fresh on every call from the live registry, so a
 newly registered workflow becomes triageable immediately (`buildTriagePrompt`
 in `prompt.ts`). For each registry entry it emits the `id`, `description`, and a
 compact, shallow rendering of the entry's Zod `argsSchema` produced by
-`zodToReadable` (`describe.ts`) — e.g. `{ repo: one of [engine | web], focus:
-string (optional) }`. It then lists the known repo aliases (the ONLY valid
-values for a `repo` argument), falling back to `(none configured)` when none are
-configured. See [04-workflow-registry](04-workflow-registry.md) for the entry
-shape and [10-configuration](10-configuration.md) for the alias map.
+`zodToReadable` (`describe.ts`) — e.g. `{ repoHint: string, scope: one of [repo | diff], focus:
+string (optional) }`. See [04-workflow-registry](04-workflow-registry.md) for the entry
+shape.
 
 The prompt's fixed rules instruct the model to: pick a `workflowId` from the
 listed ids (or lower confidence and ask via `clarificationQuestion` if none
-fits); extract args strictly from the listed shapes and never invent a repo
-alias; report `confidence` honestly; and prefer a clarification over guessing
-when the request is ambiguous. The user text is wrapped by
-`buildTriageUserPrompt` as `User request:\n<text>`.
+fits); extract args strictly from the listed shapes; report `confidence`
+honestly; and prefer a clarification over guessing when the request is
+ambiguous. The user text is wrapped by `buildTriageUserPrompt` as
+`User request:\n<text>`.
 
 ### `runTriage` flow
 
 `runTriage(deps, text)` (`triage.ts`) takes `TriageDeps`
-(`{ adapter, policy, registry, aliases, log }`) and:
+(`{ adapter, policy, registry, log }`) and:
 
 1. Builds the system instructions and user prompt.
 2. Assembles a spec `{ prompt, model: policy.model, schema: triageJsonSchema,
@@ -117,8 +115,6 @@ in the consumer `decide()` in [05-request-dispatch](05-request-dispatch.md).
   args via a single, schema-constrained `claude` adapter call.
 - Builds its prompt from the live registry on every call, so new workflows are
   triageable the moment they register.
-- Constrains the `repo` argument to the configured alias set and instructs the
-  model never to invent an alias.
 - Emits an honest `confidence` and an optional one-sentence
   `clarificationQuestion` so the dispatcher can punt cleanly.
 - Runs under an explicit policy: fixed model, hard timeout, advisory token cap,
@@ -144,20 +140,14 @@ in the consumer `decide()` in [05-request-dispatch](05-request-dispatch.md).
 
 ## Traceability
 
-- **Design**: `docs/tohru.hanai-main-design-20260611-235421.md` (archival) — the
-  `triage/` component as a direct single adapter call returning
-  `{workflowId, args, confidence, clarificationQuestion?}` (architecture sketch);
-  the folded Codex amendment "Triage gets its own explicit runtime policy:
-  model, timeout, token cap, escalation disabled"; the clarification path (4A)
-  and triage eval suite (7A); README.md "Triage" / "Triage eval".
+- **Design decisions**: the `triage/` component as a direct single adapter call returning `{workflowId, args, confidence, clarificationQuestion?}` (architecture sketch); the folded Codex amendment "Triage gets its own explicit runtime policy: model, timeout, token cap, escalation disabled"; the clarification path (4A) and triage eval suite (7A); README.md "Triage" / "Triage eval".
 - **Modules**: `src/triage/` (`triage.ts` `runTriage`/`TriageDeps`,
   `schema.ts` `triageJsonSchema`/`triageResultSchema`/`TriageResult`,
   `prompt.ts` `buildTriagePrompt`/`buildTriageUserPrompt`, `describe.ts`
   `zodToReadable`).
 - **Related FR**:
   - [10-configuration](10-configuration.md) — supplies the `triage` policy block
-    (`model`, `confidenceThreshold`, `timeoutMs`, `tokenCap`) and the repo alias
-    map. (depends_on)
+    (`model`, `confidenceThreshold`, `timeoutMs`, `tokenCap`). (depends_on)
   - [04-workflow-registry](04-workflow-registry.md) — provides the entries and
     `argsSchema` rendered into the prompt and re-validated downstream.
   - [05-request-dispatch](05-request-dispatch.md) — consumes the `TriageResult`,

@@ -85,6 +85,6 @@ A single request can produce more than one line over its lifetime: e.g. `dispatc
 
 ## Traceability
 
-- **Design**: D14 (append-only JSONL audit log: timestamp, team/user, raw text, chosen workflow, args, approvals, token usage, outcome; best-effort writes that never crash the request path) in `docs/tohru.hanai-main-design-20260611-235421.md`.
+- **Design decisions**: D14 (append-only JSONL audit log: timestamp, team/user, raw text, chosen workflow, args, approvals, token usage, outcome; best-effort writes that never crash the request path).
 - **Modules**: `src/audit.ts`.
 - **Related FR**: [05-request-dispatch](05-request-dispatch.md) — the dispatcher is the sole caller of `record()` and the source of every outcome; [10-configuration](10-configuration.md) — `auditLogPath` (default `./audit.jsonl`) sets where the log is written.

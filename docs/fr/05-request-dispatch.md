@@ -63,9 +63,9 @@ A thread reply is consumed by its pending clarification if one is still live; ot
 | `triage.confidence < config.triage.confidenceThreshold` | `clarify` listing the workflow menu |
 | `registry.get(triage.workflowId)` is missing (unknown id) | `clarify` listing the workflow menu |
 | `entry.argsSchema.safeParse(triage.args)` fails | `clarify` naming the bad field |
-| all pass | `dispatch` with `entry`, parsed `args`, resolved `cwd`, and `budget` |
+| all pass | `dispatch` with `entry`, parsed `args`, and `budget` |
 
-The clarification wording is grounded in source: the menu question (`chooseWorkflowQuestion`) lists each `id` + `description`; the schema question (`schemaQuestion`) reports the first failing field, and for `repo` specifically lists the valid aliases (or `(none configured)`). On a `dispatch`, `cwd` is derived from the `repo` arg via `config.repos`, and `budget = entry.budgetOverride ?? config.defaultBudget`.
+The clarification wording is grounded in source: the menu question (`chooseWorkflowQuestion`) lists each `id` + `description`; the schema question (`schemaQuestion`) reports the first failing field. On a `dispatch`, `budget = entry.budgetOverride ?? config.defaultBudget`; cwd is not resolved at this stage — repo-aware workflows set cwd per-agent after resolving the target repo.
 
 When `process()` gets a `clarify`, it stores `{ originalText: text, question }` in the thread store, posts the question, and records `clarification` (carrying `triage.workflowId` and `triage.args`). The next in-thread reply re-runs triage with the original text plus the `[follow-up]` line appended (the merge step above).
 
@@ -120,6 +120,6 @@ Every terminal outcome calls `record()`, which stamps `teamId`, `userId`, `chann
 
 ## Traceability
 
-- **Design**: see `docs/tohru.hanai-main-design-20260611-235421.md` — decision 4A (low confidence, unknown workflow id, or schema failure all collapse to one clarification path), 5A (the dispatch acknowledgment echoes the chosen workflow and extracted args), and 8A/D9 (thread-state entries carry a TTL with check-on-access plus periodic sweep; an expired clarification is treated as a fresh request); D11 (approvals use Block Kit buttons and never consume thread replies).
+- **Design decisions**: 4A (low confidence, unknown workflow id, or schema failure all collapse to one clarification path), 5A (the dispatch acknowledgment echoes the chosen workflow and extracted args), and 8A/D9 (thread-state entries carry a TTL with check-on-access plus periodic sweep; an expired clarification is treated as a fresh request); D11 (approvals use Block Kit buttons and never consume thread replies).
 - **Modules**: `src/dispatcher/dispatcher.ts`, `src/dispatcher/decide.ts`, `src/dispatcher/format.ts`, `src/thread-state.ts`.
 - **Related FR**: [03-triage](03-triage.md) produces the `TriageResult` `decide()` consumes; [04-workflow-registry](04-workflow-registry.md) supplies the entry, schema, and budget; [02-authorization](02-authorization.md) gates the pipeline first; [06-single-flight-queue](06-single-flight-queue.md) admits and serializes the work; [08-escalation-approvals](08-escalation-approvals.md) handles in-thread tool approvals during a run; [12-agentbus-surfaced-lane](12-agentbus-surfaced-lane.md) and [13-resident-agent](13-resident-agent.md) own the surfaced launch and resident routing.

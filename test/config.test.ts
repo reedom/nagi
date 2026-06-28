@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { parseConfig } from '../src/config.js';
 
-const base = { slack: { allowedTeamId: 'T', allowedUserIds: ['U'] }, repos: { engine: '/abs/engine' } };
+const base = { slack: { allowedTeamId: 'T', allowedUserIds: ['U'] }, repoScopes: ['github.com/reedom/*'] };
 
 describe('cmux config', () => {
   it('defaults cmux to undefined', () => {

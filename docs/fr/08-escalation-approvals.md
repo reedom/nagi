@@ -95,6 +95,6 @@ The AgentBus bridge ([12-agentbus-surfaced-lane](12-agentbus-surfaced-lane.md)) 
 
 ## Traceability
 
-- **Design**: see `docs/tohru.hanai-main-design-20260611-235421.md` — decision 1A (serialization: one approval question outstanding per thread at a time, internal FIFO) and D11 (Block Kit Approve/Deny buttons bound to the request id, eliminating any text approve/deny parser and making misrouted approvals structurally impossible; `onTimeout: 'wait'` bounded by the claude adapter's 24h hook ceiling). The 24h ceiling itself is an adapter property surfaced as design-only context here.
+- **Design decisions**: 1A (serialization: one approval question outstanding per thread at a time, internal FIFO) and D11 (Block Kit Approve/Deny buttons bound to the request id, eliminating any text approve/deny parser and making misrouted approvals structurally impossible; `onTimeout: 'wait'` bounded by the claude adapter's 24h hook ceiling). The 24h ceiling itself is an adapter property surfaced as design-only context here.
 - **Modules**: `src/escalation/` (`slack-channel.ts`, `blocks.ts`, `approval-registry.ts`).
 - **Related FR**: [01-slack-front-door](01-slack-front-door.md) posts the message and delivers the button click that resolves the registry (hard dependency); [05-request-dispatch](05-request-dispatch.md) wires the channel into in-thread runs with `onTimeout: 'wait'`; [12-agentbus-surfaced-lane](12-agentbus-surfaced-lane.md) reuses the same channel for surfaced runs via the AgentBus bridge.

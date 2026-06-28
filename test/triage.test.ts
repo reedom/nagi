@@ -6,10 +6,9 @@ import type { CliAdapter } from 'ai-workflow-engine';
 
 const config = testConfig();
 const registry = makeRegistry(config);
-const aliases = ['engine', 'web'];
 
 function deps(adapter: CliAdapter, log = recordingLogger()) {
-  return { adapter, policy: config.triage, registry, aliases, log };
+  return { adapter, policy: config.triage, registry, log };
 }
 
 describe('runTriage', () => {
@@ -20,10 +19,9 @@ describe('runTriage', () => {
     const result = await runTriage(deps(adapter), 'review the engine');
     expect(result.workflowId).toBe('review-repo');
     expect(result.confidence).toBe(0.9);
-    // It sends a schema and the prompt enumerates workflows + repos.
+    // It sends a schema and the prompt enumerates workflows.
     expect(adapter.calls[0]?.schema).toBeDefined();
     expect(adapter.calls[0]?.instructions).toMatch(/review-repo/);
-    expect(adapter.calls[0]?.instructions).toMatch(/engine, web/);
   });
 
   it('throws when the adapter returns no structured output', async () => {
@@ -51,7 +49,7 @@ describe('runTriage', () => {
     };
     const fastPolicy = testConfig({ triage: { confidenceThreshold: 0.6, timeoutMs: 20 } });
     await expect(
-      runTriage({ adapter: hung, policy: fastPolicy.triage, registry, aliases, log: recordingLogger() }, 'x'),
+      runTriage({ adapter: hung, policy: fastPolicy.triage, registry, log: recordingLogger() }, 'x'),
     ).rejects.toThrow(/timed out/);
   });
 });

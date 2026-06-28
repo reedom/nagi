@@ -26,6 +26,10 @@ export const triageCases: TriageCase[] = [
   { name: 'compare jobs', input: 'compare approaches to background job processing', expect: { workflowId: 'research' } },
   { name: 'best practices', input: 'what are the current best practices for socket-mode slack bots?', expect: { workflowId: 'research' } },
 
+  // investigate-ticket dispatches
+  { name: 'investigate ticket abc', input: 'investigate ticket ABC-1234', expect: { workflowId: 'investigate-ticket' } },
+  { name: 'investigate ticket xyz', input: 'look into XYZ-42 and find the root cause', expect: { workflowId: 'investigate-ticket' } },
+
   // surface dispatches
   { name: 'surface engine', input: 'open a surface and run auth review on engine', expect: { workflowId: 'surface' } },
 
@@ -33,7 +37,7 @@ export const triageCases: TriageCase[] = [
   { name: 'vague do', input: 'do the thing', expect: { clarify: true } },
   { name: 'help', input: 'help', expect: { clarify: true } },
   { name: 'review no repo', input: 'review my code', expect: { clarify: true } },
-  { name: 'unknown repo', input: 'review the foobar repo', expect: { clarify: true } },
+  { name: 'unknown repo', input: 'review the foobar repo', expect: { workflowId: 'review-repo' } },
   { name: 'which project', input: 'can you look at my project', expect: { clarify: true } },
   { name: 'ambiguous run', input: 'run a workflow for me', expect: { clarify: true } },
   { name: 'bare summarize', input: 'summarize', expect: { clarify: true } },

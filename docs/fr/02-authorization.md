@@ -102,10 +102,7 @@ enumerated audit outcomes. See [09-audit-log](09-audit-log.md).
 
 ## Traceability
 
-- **Design**: `docs/tohru.hanai-main-design-20260611-235421.md` (archival) —
-  Authorization as a v1 requirement and the auth gate pinning workspace/team ID
-  alongside the user allowlist (decision D14); README.md "Authorization
-  (required, not optional)".
+- **Design decisions**: Authorization as a v1 requirement and the auth gate pinning workspace/team ID alongside the user allowlist (decision D14); README.md "Authorization (required, not optional)".
 - **Modules**: `src/auth/allowlist.ts` (`checkAuth`, `AuthResult`,
   `REFUSAL_MESSAGE`).
 - **Related FR**:

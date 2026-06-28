@@ -7,7 +7,6 @@ import { makeThreadStore } from '../src/thread-state.js';
 import { ApprovalRegistry } from '../src/escalation/approval-registry.js';
 import { PendingRuns } from '../src/agentbus-bridge/pending-runs.js';
 import { ResidentSessions } from '../src/residents/resident-sessions.js';
-import { repoAliases } from '../src/config.js';
 import type { RequestContext } from '../src/types.js';
 import { fakeAdapter, recordingAudit, recordingReplier, silentLogger, testConfig, tick } from './helpers.js';
 
@@ -22,7 +21,7 @@ function surfaceHarness() {
   const replier = recordingReplier();
   const pending = new PendingRuns();
   const triageAdapter = fakeAdapter([
-    { data: { workflowId: 'surface', args: { repo: 'engine', task: 't' }, confidence: 1 } },
+    { data: { workflowId: 'surface', args: { task: 't' }, confidence: 1 } },
   ]);
   const gate = { post: async () => ({ ts: 'x' }), update: async () => {}, uploadSnippet: async () => {} };
   const closeSurface = vi.fn(async () => {});
@@ -48,7 +47,7 @@ function surfaceHarness() {
   const dispatcher = new Dispatcher({
     config,
     registry,
-    triage: { adapter: triageAdapter, policy: config.triage, registry, aliases: repoAliases(config), log: silentLogger },
+    triage: { adapter: triageAdapter, policy: config.triage, registry, log: silentLogger },
     adapters: { claude: triageAdapter, codex: triageAdapter },
     audit,
     queue,

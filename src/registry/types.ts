@@ -1,4 +1,4 @@
-import { z, type ZodType } from 'zod';
+import type { ZodType } from 'zod';
 import type { WorkflowModule } from 'ai-workflow-engine';
 
 // A registry entry embeds a REAL WorkflowModule (2A): the concierge calls
@@ -17,19 +17,7 @@ export interface RegistryEntry {
   surfaced?: boolean;
 }
 
-/**
- * Entries are produced from the live repo-alias list so their arg schemas can
- * enumerate known repos (D13) — free-form paths are unrepresentable.
- */
-export type EntryFactory = (aliases: string[]) => RegistryEntry;
-
-/** A zod schema accepting exactly the configured repo aliases (D13). */
-export function repoEnum(aliases: string[]): ZodType<string> {
-  if (aliases.length === 0) {
-    return z.string().refine(() => false, 'no repos are configured');
-  }
-  return z.enum(aliases as [string, ...string[]]);
-}
+export type EntryFactory = () => RegistryEntry;
 
 export class Registry {
   private readonly byId: Map<string, RegistryEntry>;
@@ -55,6 +43,6 @@ export class Registry {
   }
 }
 
-export function buildRegistry(factories: EntryFactory[], aliases: string[]): Registry {
-  return new Registry(factories.map((make) => make(aliases)));
+export function buildRegistry(factories: EntryFactory[]): Registry {
+  return new Registry(factories.map((make) => make()));
 }
