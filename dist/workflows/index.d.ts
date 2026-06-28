@@ -1,5 +1,4 @@
-import { E as EntryFactory, W as WorkflowFactory } from '../types-CFw23SWw.js';
-import { WorkflowApi } from 'ai-workflow-engine';
+import { E as EntryFactory, W as WorkflowFactory, c as WorkflowApi } from '../types-DWQjEzd2.js';
 import 'zod';
 
 declare const reviewRepoEntry: EntryFactory;

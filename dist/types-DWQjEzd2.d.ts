@@ -1,5 +1,92 @@
 import { z, ZodType } from 'zod';
-import { WorkflowModule } from 'ai-workflow-engine';
+
+interface EscalationPolicy {
+    timeoutMs: number;
+    onTimeout: 'deny' | 'wait';
+}
+
+interface AgentEscalation {
+    runId: string;
+    socketPath: string;
+    agentLabel: string;
+    policy: EscalationPolicy;
+    rules: string[];
+    helperCommand?: string;
+}
+interface AgentSpec {
+    prompt: string;
+    model?: string;
+    schema?: unknown;
+    instructions?: string;
+    tools?: string[];
+    cwd?: string;
+    escalation?: AgentEscalation;
+}
+interface AgentUsage {
+    inputTokens: number;
+    outputTokens: number;
+}
+interface AgentResult<T = unknown> {
+    text: string;
+    data?: T;
+    raw: unknown;
+    usage: AgentUsage;
+    sessionId?: string;
+}
+interface CliAdapter {
+    readonly id: string;
+    readonly caps: {
+        schema: boolean;
+        resume: boolean;
+        tools: boolean;
+    };
+    run(spec: AgentSpec): Promise<AgentResult>;
+}
+interface AgentEscalationOptions {
+    timeoutMs?: number;
+    onTimeout?: 'deny' | 'wait';
+    disabled?: boolean;
+}
+interface AgentOptions {
+    cli?: string;
+    model?: string;
+    schema?: unknown;
+    instructions?: string;
+    tools?: string[];
+    cwd?: string;
+    label?: string;
+    phase?: string;
+    escalation?: AgentEscalationOptions;
+}
+type Stage = (prev: unknown, item: unknown, index: number) => unknown;
+interface Budget {
+    total: number | null;
+    spent(): number;
+    remaining(): number;
+}
+interface WorkflowApi {
+    agent(prompt: string, opts?: AgentOptions): Promise<AgentResult>;
+    parallel<T>(thunks: Array<() => Promise<T>>): Promise<Array<T | null>>;
+    pipeline(items: unknown[], ...stages: Stage[]): Promise<Array<unknown>>;
+    phase(title: string): void;
+    log(message: string): void;
+    budget: Budget;
+    args: unknown;
+}
+interface WorkflowMeta {
+    name: string;
+    description: string;
+    whenToUse?: string;
+    phases?: Array<{
+        title: string;
+        detail?: string;
+        model?: string;
+    }>;
+}
+interface WorkflowModule {
+    meta: WorkflowMeta;
+    default: (wf: WorkflowApi) => Promise<unknown>;
+}
 
 declare const configSchema: z.ZodObject<{
     slack: z.ZodObject<{
@@ -124,4 +211,4 @@ type WorkflowFactory = (ctx: NagiContext) => RegistryEntry;
 /** @deprecated Use WorkflowFactory instead. */
 type EntryFactory = WorkflowFactory;
 
-export { type EntryFactory as E, type NagiConfig as N, type RegistryEntry as R, type WorkflowFactory as W, type NagiContext as a, loadConfig as l, parseConfig as p };
+export { type AgentOptions as A, type CliAdapter as C, type EntryFactory as E, type NagiConfig as N, type RegistryEntry as R, type WorkflowFactory as W, type AgentResult as a, type NagiContext as b, type WorkflowApi as c, type WorkflowModule as d, loadConfig as l, parseConfig as p };
