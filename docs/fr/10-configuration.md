@@ -51,6 +51,7 @@ Validated by `configSchema` in `src/config.ts`. Every field below is what the co
 | `triage.tokenCap` | `int` (positive) | `2000` | Advisory token ceiling for triage; an overrun is audited, not fatal. |
 | `defaultBudget` | `int` (positive) or `null` | `null` | Default per-request token budget; `null` = unbounded. Registry entries may override it ([04-workflow-registry](04-workflow-registry.md)). |
 | `auditLogPath` | `string` | `./audit.jsonl` | Path of the append-only JSONL audit log ([09-audit-log](09-audit-log.md)). |
+| `permissionMode` | `"default" \| "acceptEdits" \| "auto" \| "bypassPermissions"` | `default` | Run-level Claude permission mode for workflow agents (per-call `wf.agent({ permissionMode })` overrides). Maps to a claude CLI flag; does NOT remove nagi's PreToolUse approval boundary — see "Permission mode" below. |
 | `cmux.socketPath` | `string` (non-empty) | _omitted_ | Optional explicit cmux socket for the surfaced lane ([12-agentbus-surfaced-lane](12-agentbus-surfaced-lane.md)). |
 | `cmux.password` | `string` (non-empty) | _omitted_ | Optional explicit cmux password. |
 | `cmux.window` | `string` (non-empty) | _omitted_ | Optional explicit cmux window. |
