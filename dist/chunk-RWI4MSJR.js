@@ -53,8 +53,9 @@ var configSchema = z.object({
   auditLogPath: z.string().default("./audit.jsonl"),
   // Default Claude permission mode for workflow agents; a workflow's
   // wf.agent({ permissionMode }) overrides it per call. Tunes claude's BUILT-IN
-  // permission flow only — nagi's PreToolUse approval hook still gates every tool via
-  // Slack regardless of mode, so 'bypassPermissions' does NOT remove that boundary.
+  // permission flow. nagi's Slack approval gate is a PermissionRequest hook — a
+  // conditional substitute for claude's own prompt that fires ONLY when claude would
+  // ask a human, so 'bypassPermissions' (and tools claude auto-allows) skip the gate.
   permissionMode: z.enum(["default", "acceptEdits", "auto", "bypassPermissions"]).default("default")
 });
 function parseConfig(raw) {
@@ -544,7 +545,12 @@ function buildEscalationSettings(esc, dir) {
   const helper = esc.helperCommand ?? defaultHelperCommand();
   const settings = {
     hooks: {
-      PreToolUse: [
+      // PermissionRequest (not PreToolUse): PreToolUse fires for every tool call
+      // regardless of permission mode, gating unconditionally. PermissionRequest fires
+      // only when Claude's permission system would prompt a human, so the broker escalation
+      // is a conditional substitute for Claude's own prompt — silent under bypassPermissions
+      // and for tools Claude already auto-allows.
+      PermissionRequest: [
         {
           matcher: "*",
           hooks: [
@@ -873,7 +879,12 @@ function writeApprovalSettings(input) {
   }));
   const settings = {
     hooks: {
-      PreToolUse: [
+      // PermissionRequest (not PreToolUse): PreToolUse fires for EVERY tool call
+      // regardless of permission mode, which would gate unconditionally. PermissionRequest
+      // fires only when Claude's permission system would prompt a human — so this Slack
+      // gate is a conditional substitute for Claude's own prompt: silent under
+      // bypassPermissions / for auto-allowed tools, active only when Claude would ask.
+      PermissionRequest: [
         {
           matcher: "*",
           hooks: [
@@ -1472,9 +1483,11 @@ function withTimeout(work, ms, label) {
 }
 
 // src/triage/describe.ts
-import { z as z2 } from "zod";
+function defOf(schema) {
+  return schema._def;
+}
 function zodToReadable(schema) {
-  if (schema instanceof z2.ZodObject) {
+  if (defOf(schema).typeName === "ZodObject") {
     const shape = schema.shape;
     const fields = Object.entries(shape).map(([key, value]) => `${key}: ${describeField(value)}`);
     return `{ ${fields.join(", ")} }`;
@@ -1482,13 +1495,23 @@ function zodToReadable(schema) {
   return describeField(schema);
 }
 function describeField(schema) {
-  if (schema instanceof z2.ZodOptional) return `${describeField(schema.unwrap())}?`;
-  if (schema instanceof z2.ZodDefault) return `${describeField(schema._def.innerType)} (optional)`;
-  if (schema instanceof z2.ZodEnum) return `one of [${schema.options.join(" | ")}]`;
-  if (schema instanceof z2.ZodString) return "string";
-  if (schema instanceof z2.ZodNumber) return "number";
-  if (schema instanceof z2.ZodBoolean) return "boolean";
-  return "value";
+  const def = defOf(schema);
+  switch (def.typeName) {
+    case "ZodOptional":
+      return `${describeField(def.innerType)}?`;
+    case "ZodDefault":
+      return `${describeField(def.innerType)} (optional)`;
+    case "ZodEnum":
+      return `one of [${(def.values ?? []).join(" | ")}]`;
+    case "ZodString":
+      return "string";
+    case "ZodNumber":
+      return "number";
+    case "ZodBoolean":
+      return "boolean";
+    default:
+      return "value";
+  }
 }
 
 // src/triage/prompt.ts
@@ -1519,12 +1542,12 @@ ${text}`;
 }
 
 // src/triage/schema.ts
-import { z as z3 } from "zod";
-var triageResultSchema = z3.object({
-  workflowId: z3.string(),
-  args: z3.record(z3.string(), z3.unknown()).default({}),
-  confidence: z3.number().min(0).max(1),
-  clarificationQuestion: z3.string().nullish()
+import { z as z2 } from "zod";
+var triageResultSchema = z2.object({
+  workflowId: z2.string(),
+  args: z2.record(z2.string(), z2.unknown()).default({}),
+  confidence: z2.number().min(0).max(1),
+  clarificationQuestion: z2.string().nullish()
 });
 var triageJsonSchema = {
   type: "object",

@@ -75,12 +75,11 @@ function isSelfReport(toolName, toolInput, nagiInstance) {
     return tokens[1] === nagiInstance;
   return tokens[0] === nagiInstance;
 }
-function decisionJson(behavior, reason) {
+function decisionJson(behavior, _reason) {
   return JSON.stringify({
     hookSpecificOutput: {
-      hookEventName: "PreToolUse",
-      permissionDecision: behavior,
-      permissionDecisionReason: reason
+      hookEventName: "PermissionRequest",
+      decision: { behavior }
     }
   });
 }

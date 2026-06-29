@@ -16,9 +16,10 @@ interface AgentEscalation {
 /**
  * Claude permission mode for a spawned agent, mapped to a CLI flag: `default` (none),
  * `acceptEdits`/`auto` -> `--permission-mode <mode>`, `bypassPermissions` ->
- * `--dangerously-skip-permissions`. This only tunes claude's BUILT-IN permission flow;
- * a PreToolUse approval hook (if the host installs one, as nagi does) runs independently
- * of the mode and can still gate tools.
+ * `--dangerously-skip-permissions`. This tunes claude's BUILT-IN permission flow;
+ * a host's PermissionRequest approval hook (as nagi installs) is a conditional substitute
+ * for claude's own prompt — it fires only when claude would ask, so it stays silent under
+ * `bypassPermissions` and for tools claude already auto-allows.
  */
 type PermissionMode = 'default' | 'acceptEdits' | 'auto' | 'bypassPermissions';
 interface AgentSpec {
