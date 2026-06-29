@@ -466,11 +466,18 @@ import { tmpdir as tmpdir2 } from "os";
 import { join as join3 } from "path";
 import { fileURLToPath } from "url";
 function permissionModeArgs(mode) {
-  if (mode === void 0 || mode === "default")
-    return [];
-  if (mode === "bypassPermissions")
-    return ["--dangerously-skip-permissions"];
-  return ["--permission-mode", mode];
+  switch (mode) {
+    case void 0:
+    case "default":
+      return [];
+    case "bypassPermissions":
+      return ["--dangerously-skip-permissions"];
+    case "acceptEdits":
+    case "auto":
+      return ["--permission-mode", mode];
+    default:
+      throw new Error(`unknown permission mode: ${String(mode)}`);
+  }
 }
 function buildClaudeArgs(spec) {
   const args = ["-p", spec.prompt, "--output-format", "json"];
