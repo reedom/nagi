@@ -52,8 +52,9 @@ const configSchema = z.object({
   auditLogPath: z.string().default('./audit.jsonl'),
   // Default Claude permission mode for workflow agents; a workflow's
   // wf.agent({ permissionMode }) overrides it per call. Tunes claude's BUILT-IN
-  // permission flow only — nagi's PreToolUse approval hook still gates every tool via
-  // Slack regardless of mode, so 'bypassPermissions' does NOT remove that boundary.
+  // permission flow. nagi's Slack approval gate is a PermissionRequest hook — a
+  // conditional substitute for claude's own prompt that fires ONLY when claude would
+  // ask a human, so 'bypassPermissions' (and tools claude auto-allows) skip the gate.
   permissionMode: z.enum(['default', 'acceptEdits', 'auto', 'bypassPermissions']).default('default'),
 });
 
