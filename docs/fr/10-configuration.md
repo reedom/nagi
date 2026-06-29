@@ -69,6 +69,7 @@ When `cmux` is omitted, the host runs `cmux` with no `--socket`/`--password` and
 | `SLACK_APP_TOKEN` | yes | App-level socket-mode token (`xapp-…`); throws `SLACK_APP_TOKEN is required` if unset. |
 | `NAGI_CONFIG` | no | Path to the JSON config; default `./nagi.config.json`. |
 | `NAGI_ENV_FILE` | no | Path `loadDotenv` reads; default `.env`. |
+| `NAGI_DEBUG` | no | When set (any value except empty/`0`/`false`), emits `[nagi:debug]` traces to stderr — Slack events received/dropped (e.g. a non-DM, non-mention message is ignored), and the dispatch path (auth, control, triage, decision, lane). Off by default; read per call so it can be toggled without rebuilding. |
 
 `loadDotenv` (`src/util/env.ts`) is best-effort: a missing file is fine (under launchd the secrets come from the plist's `EnvironmentVariables` and there is no `.env`), so it returns silently. An existing-but-malformed file fails loudly — `process.loadEnvFile` propagates the parse error so the daemon refuses to start with broken secrets. Example files: `.env.example`, `nagi.config.example.json`; setup steps are in [README](../../README.md).
 

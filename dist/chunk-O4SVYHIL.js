@@ -78,7 +78,14 @@ function emit(level, msg, meta) {
   process.stderr.write(`[nagi:${level}] ${msg}${suffix}
 `);
 }
+function debugEnabled() {
+  const v = process.env["NAGI_DEBUG"];
+  return v !== void 0 && v !== "" && v !== "0" && v.toLowerCase() !== "false";
+}
 var logger = {
+  debug: (msg, meta) => {
+    if (debugEnabled()) emit("debug", msg, meta);
+  },
   info: (msg, meta) => emit("info", msg, meta),
   warn: (msg, meta) => emit("warn", msg, meta),
   error: (msg, meta) => emit("error", msg, meta)
@@ -1605,20 +1612,24 @@ var Dispatcher = class {
   runWorkflowFn;
   /** Entry point for every inbound Slack message. Never throws. */
   async handle(req) {
+    this.deps.log.debug("dispatcher: handle", { channel: req.channel, threadTs: req.threadTs, userId: req.userId, text: req.text });
     const replier = this.deps.makeReplier(req);
     const auth = checkAuth(this.deps.config, req);
     if (!auth.allowed) {
+      this.deps.log.debug("dispatcher: auth refused", { userId: req.userId, teamId: req.teamId, reason: auth.reason ?? null });
       await this.safeSay(replier, REFUSAL_MESSAGE);
       this.record(req, "refused", auth.reason ? { detail: auth.reason } : {});
       return;
     }
     const control = parseControl(req.text);
     if (control) {
+      this.deps.log.debug("dispatcher: control command", { control });
       await this.handleControl(control, req, replier);
       return;
     }
     const resident = this.deps.residents.getByThread(req.threadTs);
     if (resident) {
+      this.deps.log.debug("dispatcher: feeding resident", { threadTs: req.threadTs });
       await this.feedResident(resident, req, replier);
       return;
     }
@@ -1630,6 +1641,10 @@ var Dispatcher = class {
     const admission = this.deps.queue.enqueue({
       label: shortLabel(req.text),
       run: () => this.process(req, text, replier)
+    });
+    this.deps.log.debug("dispatcher: enqueued", {
+      accepted: admission.accepted,
+      ...admission.accepted ? {} : { position: admission.position, busyWith: admission.busyWith }
     });
     if (!admission.accepted) {
       await this.safeSay(
@@ -1702,6 +1717,7 @@ var Dispatcher = class {
   }
   async process(req, text, replier) {
     this.cancelling = false;
+    this.deps.log.debug("dispatcher: triaging", { text });
     let triageResult;
     try {
       triageResult = await runTriage(this.deps.triage, text);
@@ -1710,7 +1726,12 @@ var Dispatcher = class {
       this.record(req, "failed", { detail: `triage: ${errorMessage(err)}` });
       return;
     }
+    this.deps.log.debug("dispatcher: triage result", { workflowId: triageResult.workflowId, args: triageResult.args });
     const decision = decide(this.deps.config, this.deps.registry, triageResult);
+    this.deps.log.debug("dispatcher: decision", {
+      kind: decision.kind,
+      ...decision.kind === "dispatch" ? { entry: decision.entry.id, surfaced: Boolean(decision.entry.surfaced) } : {}
+    });
     if (decision.kind === "clarify") {
       this.deps.threadStore.set(req.threadTs, { originalText: text, question: decision.question });
       await this.safeSay(replier, decision.question);
@@ -1854,15 +1875,38 @@ function createSlackBot(deps) {
     socketMode: true
   });
   const dispatch = (args) => {
+    const ev = args.event;
+    deps.log.debug("slack: event received", {
+      type: ev.type,
+      channelType: ev.channel_type,
+      user: ev.user,
+      channel: ev.channel,
+      ts: ev.ts,
+      hasText: Boolean(ev.text),
+      botId: ev.bot_id ?? null
+    });
     const req = toRequestContext(args);
-    if (!req) return;
-    if (args.event.bot_id || req.userId === args.context.botUserId) return;
+    if (!req) {
+      deps.log.debug("slack: dropped \u2014 incomplete event (need teamId, user, channel, ts)", {
+        teamId: args.context.teamId ?? null,
+        user: ev.user ?? null,
+        channel: ev.channel ?? null,
+        ts: ev.ts ?? null
+      });
+      return;
+    }
+    if (args.event.bot_id || req.userId === args.context.botUserId) {
+      deps.log.debug("slack: dropped \u2014 our own / a bot post", { user: req.userId });
+      return;
+    }
+    deps.log.debug("slack: dispatching request", { channel: req.channel, threadTs: req.threadTs, text: req.text });
     void deps.handle(req).catch((err) => deps.log.error("handle threw", { error: String(err) }));
   };
   app.event("app_mention", async (a) => dispatch(a));
   app.message(async (a) => {
     const args = a;
     if (args.event.channel_type === "im") dispatch(args);
+    else deps.log.debug("slack: ignoring non-DM message (use a DM or @mention)", { channelType: args.event.channel_type, type: args.event.type });
   });
   registerApprovalActions(app, deps);
   return {
@@ -1938,7 +1982,8 @@ function createNagi(options) {
     const makeSurfaceAdapter2 = (runId, binding, onSurfaceRef) => makeCmuxClaudeAdapter({
       nagiInstance: NAGI_INSTANCE,
       newRunId: () => {
-        pending.await(runId, { ...binding, ceilingMs: SURFACE_CEILING_MS });
+        void pending.await(runId, { ...binding, ceilingMs: SURFACE_CEILING_MS }).catch(() => {
+        });
         return runId;
       },
       awaitResult: () => pending.awaitExisting(runId),

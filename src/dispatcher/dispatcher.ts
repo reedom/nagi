@@ -77,9 +77,11 @@ export class Dispatcher {
 
   /** Entry point for every inbound Slack message. Never throws. */
   async handle(req: RequestContext): Promise<void> {
+    this.deps.log.debug('dispatcher: handle', { channel: req.channel, threadTs: req.threadTs, userId: req.userId, text: req.text });
     const replier = this.deps.makeReplier(req);
     const auth = checkAuth(this.deps.config, req);
     if (!auth.allowed) {
+      this.deps.log.debug('dispatcher: auth refused', { userId: req.userId, teamId: req.teamId, reason: auth.reason ?? null });
       await this.safeSay(replier, REFUSAL_MESSAGE);
       this.record(req, 'refused', auth.reason ? { detail: auth.reason } : {});
       return;
@@ -87,12 +89,14 @@ export class Dispatcher {
 
     const control = parseControl(req.text);
     if (control) {
+      this.deps.log.debug('dispatcher: control command', { control });
       await this.handleControl(control, req, replier);
       return;
     }
 
     const resident = this.deps.residents.getByThread(req.threadTs);
     if (resident) {
+      this.deps.log.debug('dispatcher: feeding resident', { threadTs: req.threadTs });
       await this.feedResident(resident, req, replier);
       return;
     }
@@ -104,6 +108,10 @@ export class Dispatcher {
     const admission = this.deps.queue.enqueue({
       label: shortLabel(req.text),
       run: () => this.process(req, text, replier),
+    });
+    this.deps.log.debug('dispatcher: enqueued', {
+      accepted: admission.accepted,
+      ...(admission.accepted ? {} : { position: admission.position, busyWith: admission.busyWith }),
     });
     if (!admission.accepted) {
       await this.safeSay(
@@ -189,6 +197,7 @@ export class Dispatcher {
 
   private async process(req: RequestContext, text: string, replier: ThreadReplier): Promise<void> {
     this.cancelling = false;
+    this.deps.log.debug('dispatcher: triaging', { text });
     let triageResult;
     try {
       triageResult = await runTriage(this.deps.triage, text);
@@ -197,8 +206,15 @@ export class Dispatcher {
       this.record(req, 'failed', { detail: `triage: ${errorMessage(err)}` });
       return;
     }
+    this.deps.log.debug('dispatcher: triage result', { workflowId: triageResult.workflowId, args: triageResult.args });
 
     const decision = decide(this.deps.config, this.deps.registry, triageResult);
+    this.deps.log.debug('dispatcher: decision', {
+      kind: decision.kind,
+      ...(decision.kind === 'dispatch'
+        ? { entry: decision.entry.id, surfaced: Boolean(decision.entry.surfaced) }
+        : {}),
+    });
     if (decision.kind === 'clarify') {
       this.deps.threadStore.set(req.threadTs, { originalText: text, question: decision.question });
       await this.safeSay(replier, decision.question);

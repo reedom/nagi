@@ -3,6 +3,8 @@ export { A as AgentOptions, a as AgentResult, b as NagiContext, R as RegistryEnt
 import 'zod';
 
 interface Logger {
+    /** Verbose tracing; emitted only when debug logging is enabled (NAGI_DEBUG). */
+    debug(msg: string, meta?: Record<string, unknown>): void;
     info(msg: string, meta?: Record<string, unknown>): void;
     warn(msg: string, meta?: Record<string, unknown>): void;
     error(msg: string, meta?: Record<string, unknown>): void;
