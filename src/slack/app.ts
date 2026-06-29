@@ -69,9 +69,31 @@ export function createSlackBot(deps: SlackAppDeps): SlackBot {
   });
 
   const dispatch = (args: RawArgs): void => {
+    const ev = args.event;
+    deps.log.debug('slack: event received', {
+      type: ev.type,
+      channelType: ev.channel_type,
+      user: ev.user,
+      channel: ev.channel,
+      ts: ev.ts,
+      hasText: Boolean(ev.text),
+      botId: ev.bot_id ?? null,
+    });
     const req = toRequestContext(args);
-    if (!req) return;
-    if (args.event.bot_id || req.userId === args.context.botUserId) return; // ignore our own posts
+    if (!req) {
+      deps.log.debug('slack: dropped — incomplete event (need teamId, user, channel, ts)', {
+        teamId: args.context.teamId ?? null,
+        user: ev.user ?? null,
+        channel: ev.channel ?? null,
+        ts: ev.ts ?? null,
+      });
+      return;
+    }
+    if (args.event.bot_id || req.userId === args.context.botUserId) {
+      deps.log.debug('slack: dropped — our own / a bot post', { user: req.userId });
+      return; // ignore our own posts
+    }
+    deps.log.debug('slack: dispatching request', { channel: req.channel, threadTs: req.threadTs, text: req.text });
     void deps.handle(req).catch((err) => deps.log.error('handle threw', { error: String(err) }));
   };
 
@@ -81,6 +103,9 @@ export function createSlackBot(deps: SlackAppDeps): SlackBot {
   app.message(async (a) => {
     const args = a as unknown as RawArgs;
     if (args.event.channel_type === 'im') dispatch(args);
+    // A plain channel message (no @mention, not a DM) is intentionally ignored —
+    // nagi only acts on DMs and @mentions. Trace it so "nothing happened" is visible.
+    else deps.log.debug('slack: ignoring non-DM message (use a DM or @mention)', { channelType: args.event.channel_type, type: args.event.type });
   });
 
   registerApprovalActions(app, deps);

@@ -15,12 +15,12 @@ export function testConfig(overrides: Partial<Record<string, unknown>> = {}): Na
   });
 }
 
-export const silentLogger: Logger = { info() {}, warn() {}, error() {} };
+export const silentLogger: Logger = { debug() {}, info() {}, warn() {}, error() {} };
 
 export function recordingLogger(): Logger & { warns: string[]; errors: string[] } {
   const warns: string[] = [];
   const errors: string[] = [];
-  return { info() {}, warn: (m) => warns.push(m), error: (m) => errors.push(m), warns, errors };
+  return { debug() {}, info() {}, warn: (m) => warns.push(m), error: (m) => errors.push(m), warns, errors };
 }
 
 export function recordingAudit(): AuditLog & { entries: Omit<AuditEntry, 'ts'>[] } {
