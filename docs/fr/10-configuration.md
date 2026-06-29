@@ -83,7 +83,12 @@ When `cmux` is omitted, the host runs `cmux` with no `--socket`/`--password` and
 | `auto` | `--permission-mode auto` |
 | `bypassPermissions` | `--dangerously-skip-permissions` |
 
-**This flag tunes claude's *built-in* permission flow only; it does NOT remove nagi's approval boundary.** nagi gates tools with a `PreToolUse` hook (`approve-via-agentbus`, matcher `*`) that routes every non-self-report tool call to the Slack approval channel (fail-closed on error). Per the Claude Code hook contract, PreToolUse hooks run independently of permission mode (they even receive the `permission_mode` field), so `bypassPermissions` does **not** disable them — destructive commands (e.g. `rm`, `chmod`) still require Slack approval. To actually let an agent act without approval you must relax the approval hook itself, not the permission mode.
+**This flag tunes claude's *built-in* permission flow.** nagi's Slack approval gate is a **`PermissionRequest`** hook (`approve-via-agentbus` on the surfaced lane, `hook-helper` on the claude lane; matcher `*`) — a *conditional substitute* for claude's own permission prompt, not an independent boundary. Per the Claude Code hook contract, `PermissionRequest` fires **only when claude's permission system would prompt a human**, so the gate routes exactly those tool calls to Slack (fail-closed on error) and stays silent otherwise:
+
+- Under `bypassPermissions`, claude auto-allows everything, so `PermissionRequest` never fires — **no Slack approvals**.
+- Under `default` / `acceptEdits` / `auto`, claude still prompts for non-allowlisted / destructive tools (e.g. `rm`, `chmod`), and those — and only those — route to Slack.
+
+This was a deliberate change from a `PreToolUse` hook (which fires for *every* tool regardless of mode, gating unconditionally). To reduce prompts, tune the permission mode or the agent's allow-rules — the same levers claude itself respects — rather than the hook.
 
 `loadDotenv` (`src/util/env.ts`) is best-effort: a missing file is fine (under launchd the secrets come from the plist's `EnvironmentVariables` and there is no `.env`), so it returns silently. An existing-but-malformed file fails loudly — `process.loadEnvFile` propagates the parse error so the daemon refuses to start with broken secrets. Example files: `.env.example`, `nagi.config.example.json`; setup steps are in [README](../../README.md).
 
