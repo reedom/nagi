@@ -50,7 +50,12 @@ var configSchema = z.object({
   triage: triageSchema.default({}),
   // Default per-request token budget; entries may override (3A). null = unbounded.
   defaultBudget: z.number().int().positive().nullable().default(null),
-  auditLogPath: z.string().default("./audit.jsonl")
+  auditLogPath: z.string().default("./audit.jsonl"),
+  // Default Claude permission mode for workflow agents; a workflow's
+  // wf.agent({ permissionMode }) overrides it per call. Tunes claude's BUILT-IN
+  // permission flow only — nagi's PreToolUse approval hook still gates every tool via
+  // Slack regardless of mode, so 'bypassPermissions' does NOT remove that boundary.
+  permissionMode: z.enum(["default", "acceptEdits", "auto", "bypassPermissions"]).default("default")
 });
 function parseConfig(raw) {
   return configSchema.parse(raw);
@@ -347,6 +352,7 @@ function createWorkflowApi(deps) {
         instructions: opts.instructions,
         tools: opts.tools,
         cwd: resolveAgentCwd(opts),
+        permissionMode: opts.permissionMode ?? deps.permissionMode,
         escalation: buildEscalation(prompt, opts)
       });
       deps.budget.add(result.usage.inputTokens + result.usage.outputTokens);
@@ -418,6 +424,7 @@ async function runWorkflow(mod, rawOpts) {
       budget: makeBudget(opts.budget ?? null),
       concurrency: opts.concurrency ?? 8,
       cwd: opts.cwd,
+      permissionMode: opts.permissionMode,
       onLog: opts.onLog,
       escalation
     });
@@ -458,6 +465,20 @@ import { mkdtempSync as mkdtempSync2, rmSync as rmSync2, writeFileSync } from "f
 import { tmpdir as tmpdir2 } from "os";
 import { join as join3 } from "path";
 import { fileURLToPath } from "url";
+function permissionModeArgs(mode) {
+  switch (mode) {
+    case void 0:
+    case "default":
+      return [];
+    case "bypassPermissions":
+      return ["--dangerously-skip-permissions"];
+    case "acceptEdits":
+    case "auto":
+      return ["--permission-mode", mode];
+    default:
+      throw new Error(`unknown permission mode: ${String(mode)}`);
+  }
+}
 function buildClaudeArgs(spec) {
   const args = ["-p", spec.prompt, "--output-format", "json"];
   if (spec.model)
@@ -469,6 +490,7 @@ function buildClaudeArgs(spec) {
   const tools = spec.tools ?? [];
   if (0 < tools.length)
     args.push("--allowedTools", ...tools);
+  args.push(...permissionModeArgs(spec.permissionMode));
   return args;
 }
 function parseClaudeResult(stdout) {
@@ -736,7 +758,8 @@ ${schemaDirective(spec.schema)}` : agentbusDirective(runId, nagiInstance);
         systemPrompt,
         prompt: spec.prompt,
         model: spec.model,
-        addDir: spec.cwd
+        addDir: spec.cwd,
+        ...spec.permissionMode !== void 0 ? { permissionMode: spec.permissionMode } : {}
       });
       const scriptPath = join5(runDir, "launch.sh");
       writeFileSync3(scriptPath, launcherScript(deps.agent.bin, args));
@@ -824,6 +847,7 @@ function buildClaudeArgs2(input) {
     args.push("--model", input.model);
   if (input.addDir)
     args.push("--add-dir", input.addDir);
+  args.push(...permissionModeArgs(input.permissionMode));
   args.push("--", input.prompt);
   return args;
 }
@@ -1769,6 +1793,7 @@ var Dispatcher = class {
       args: decision.args,
       budget: decision.budget,
       ...decision.cwd ? { cwd: decision.cwd } : {},
+      permissionMode: this.deps.config.permissionMode,
       escalation: { channel, runId, defaultPolicy: { onTimeout: "wait" } },
       onLog: (m) => this.deps.log.info(`[wf:${runId}] ${m}`)
     };
@@ -1805,6 +1830,7 @@ var Dispatcher = class {
       args: decision.args,
       budget: decision.budget,
       ...decision.cwd ? { cwd: decision.cwd } : {},
+      permissionMode: this.deps.config.permissionMode,
       onLog: (m) => this.deps.log.info(`[surface:${runId}] ${m}`)
     };
     void this.runWorkflowFn(decision.entry.module, options).then(async (result) => {
