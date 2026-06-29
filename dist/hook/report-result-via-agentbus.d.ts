@@ -20,6 +20,7 @@ interface ResultHookDeps {
     readAttempts?: (path: string) => number;
     writeAttempts?: (path: string, n: number) => void;
 }
+declare function defaultReadAttempts(path: string): number;
 /** Text of the last assistant message in a Claude Code JSONL transcript, or null. */
 declare function lastAssistantText(transcriptPath: string): string | null;
 /**
@@ -32,4 +33,4 @@ declare function lastAssistantText(transcriptPath: string): string | null;
  */
 declare function runResultHook(argv: string[], stdinJson: string, deps?: ResultHookDeps): Promise<string>;
 
-export { type ResultHookDeps, lastAssistantText, runResultHook };
+export { type ResultHookDeps, defaultReadAttempts, lastAssistantText, runResultHook };

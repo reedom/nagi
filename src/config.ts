@@ -50,6 +50,11 @@ const configSchema = z.object({
   // Default per-request token budget; entries may override (3A). null = unbounded.
   defaultBudget: z.number().int().positive().nullable().default(null),
   auditLogPath: z.string().default('./audit.jsonl'),
+  // Default Claude permission mode for workflow agents; a workflow's
+  // wf.agent({ permissionMode }) overrides it per call. Tunes claude's BUILT-IN
+  // permission flow only — nagi's PreToolUse approval hook still gates every tool via
+  // Slack regardless of mode, so 'bypassPermissions' does NOT remove that boundary.
+  permissionMode: z.enum(['default', 'acceptEdits', 'auto', 'bypassPermissions']).default('default'),
 });
 
 export type TriageConfig = z.infer<typeof triageSchema>;

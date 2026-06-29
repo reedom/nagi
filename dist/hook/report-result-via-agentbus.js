@@ -15,20 +15,17 @@ var KNOWN_TYPES = /* @__PURE__ */ new Set(["string", "number", "integer", "boole
 function extractJsonObject(text) {
   const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
   const body = fenced?.[1] ?? text;
-  const objStart = body.indexOf("{");
-  const arrStart = body.indexOf("[");
-  const useArray = arrStart !== -1 && (objStart === -1 || arrStart < objStart);
-  const open = useArray ? "[" : "{";
-  const close = useArray ? "]" : "}";
-  const start = body.indexOf(open);
-  const end = body.lastIndexOf(close);
-  if (start === -1 || end === -1 || end < start)
-    return void 0;
-  try {
-    return JSON.parse(body.slice(start, end + 1));
-  } catch {
-    return void 0;
+  const candidates = [
+    { start: body.indexOf("{"), end: body.lastIndexOf("}") },
+    { start: body.indexOf("["), end: body.lastIndexOf("]") }
+  ].filter((c) => c.start !== -1 && c.end !== -1 && c.start < c.end).sort((a, b) => a.start - b.start);
+  for (const { start, end } of candidates) {
+    try {
+      return JSON.parse(body.slice(start, end + 1));
+    } catch {
+    }
   }
+  return void 0;
 }
 function typeOk(value, type) {
   if (type === void 0)
@@ -99,8 +96,11 @@ function attemptsPath(runDir, key) {
 function defaultReadAttempts(path) {
   if (!existsSync(path))
     return 0;
-  const n = Number.parseInt(readFileSync(path, "utf8").trim(), 10);
-  return Number.isFinite(n) ? n : Number.MAX_SAFE_INTEGER;
+  const raw = readFileSync(path, "utf8").trim();
+  if (!/^\d+$/.test(raw))
+    return Number.MAX_SAFE_INTEGER;
+  const n = Number(raw);
+  return Number.isSafeInteger(n) ? n : Number.MAX_SAFE_INTEGER;
 }
 function defaultWriteAttempts(path, n) {
   writeFileSync(path, String(n));
@@ -242,6 +242,7 @@ if (entry !== void 0 && import.meta.url === pathToFileURL(entry).href) {
   });
 }
 export {
+  defaultReadAttempts,
   lastAssistantText,
   runResultHook
 };

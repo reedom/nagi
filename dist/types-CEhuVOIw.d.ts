@@ -13,6 +13,14 @@ interface AgentEscalation {
     rules: string[];
     helperCommand?: string;
 }
+/**
+ * Claude permission mode for a spawned agent, mapped to a CLI flag: `default` (none),
+ * `acceptEdits`/`auto` -> `--permission-mode <mode>`, `bypassPermissions` ->
+ * `--dangerously-skip-permissions`. This only tunes claude's BUILT-IN permission flow;
+ * a PreToolUse approval hook (if the host installs one, as nagi does) runs independently
+ * of the mode and can still gate tools.
+ */
+type PermissionMode = 'default' | 'acceptEdits' | 'auto' | 'bypassPermissions';
 interface AgentSpec {
     prompt: string;
     model?: string;
@@ -20,6 +28,7 @@ interface AgentSpec {
     instructions?: string;
     tools?: string[];
     cwd?: string;
+    permissionMode?: PermissionMode;
     escalation?: AgentEscalation;
 }
 interface AgentUsage {
@@ -54,6 +63,8 @@ interface AgentOptions {
     instructions?: string;
     tools?: string[];
     cwd?: string;
+    /** Per-call permission mode; overrides the run-level default. */
+    permissionMode?: PermissionMode;
     label?: string;
     phase?: string;
     escalation?: AgentEscalationOptions;
@@ -140,6 +151,7 @@ declare const configSchema: z.ZodObject<{
     }>>;
     defaultBudget: z.ZodDefault<z.ZodNullable<z.ZodNumber>>;
     auditLogPath: z.ZodDefault<z.ZodString>;
+    permissionMode: z.ZodDefault<z.ZodEnum<["default", "acceptEdits", "auto", "bypassPermissions"]>>;
 }, "strip", z.ZodTypeAny, {
     slack: {
         allowedTeamId: string;
@@ -159,6 +171,7 @@ declare const configSchema: z.ZodObject<{
     };
     defaultBudget: number | null;
     auditLogPath: string;
+    permissionMode: "default" | "acceptEdits" | "auto" | "bypassPermissions";
     cmux?: {
         socketPath?: string | undefined;
         password?: string | undefined;
@@ -188,6 +201,7 @@ declare const configSchema: z.ZodObject<{
     } | undefined;
     defaultBudget?: number | null | undefined;
     auditLogPath?: string | undefined;
+    permissionMode?: "default" | "acceptEdits" | "auto" | "bypassPermissions" | undefined;
 }>;
 type NagiConfig = z.infer<typeof configSchema>;
 declare function parseConfig(raw: unknown): NagiConfig;

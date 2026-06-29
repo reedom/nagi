@@ -258,6 +258,7 @@ export class Dispatcher {
       args: decision.args,
       budget: decision.budget,
       ...(decision.cwd ? { cwd: decision.cwd } : {}),
+      permissionMode: this.deps.config.permissionMode,
       escalation: { channel, runId, defaultPolicy: { onTimeout: 'wait' } },
       onLog: (m) => this.deps.log.info(`[wf:${runId}] ${m}`),
     };
@@ -300,6 +301,7 @@ export class Dispatcher {
       args: decision.args,
       budget: decision.budget,
       ...(decision.cwd ? { cwd: decision.cwd } : {}),
+      permissionMode: this.deps.config.permissionMode,
       onLog: (m) => this.deps.log.info(`[surface:${runId}] ${m}`),
     };
     // Fire concurrently; do NOT await (the queue job returns now).

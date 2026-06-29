@@ -118,6 +118,23 @@ describe('surfaced dispatch', () => {
     expect(h.replier.said.some((s) => /one\|two/.test(s))).toBe(true);
   });
 
+  it('passes the config permission mode into the surfaced run options', async () => {
+    let seen: unknown;
+    const h = surfaceHarness({
+      runWorkflowFn: async (_mod, opts) => {
+        seen = opts.permissionMode;
+        const adapter = opts.adapters['cmux'];
+        const r = await adapter!.run({ prompt: 't' } as never);
+        return { summary: r.text };
+      },
+    });
+    await h.dispatcher.handle(req());
+    for (let i = 0; i < 10; i += 1) await tick();
+    h.pending.resolveResult('run-surf', 'x');
+    for (let i = 0; i < 10; i += 1) await tick();
+    expect(seen).toBe('default'); // testConfig default; a workflow can override per wf.agent call
+  });
+
   it('promotes a launched surface into the resident registry for its thread', async () => {
     const h = surfaceHarness();
     await h.dispatcher.handle(req({ threadTs: 't-res' }));
