@@ -895,16 +895,16 @@ function makeCmuxHost(opts = {}) {
     },
     async addSurface({ workspaceRef, cwd, command }) {
       const args = globalArgs();
-      args.push("new-surface", "--workspace", workspaceRef);
-      if (cwd)
-        args.push("--cwd", cwd);
-      args.push("--command", command, "--focus", "true", "--json");
+      args.push("new-surface", "--workspace", workspaceRef, "--type", "terminal", "--focus", "true", "--json");
       const r = await run(bin, args);
       if (r.code !== 0)
         throw new Error(`cmux new-surface failed: ${r.stderr.trim().slice(0, 300)}`);
       const ref = parseRef(r.stdout, "surface");
       if (!ref)
         throw new Error(`cmux new-surface: could not parse a surface ref from: ${r.stdout.trim().slice(0, 200)}`);
+      const launch = cwd ? `cd ${shellQuote(cwd)} && exec ${command}` : `exec ${command}`;
+      await runOrThrow("send", ["send", "--surface", ref, launch]);
+      await runOrThrow("send-key", ["send-key", "--surface", ref, "Return"]);
       return { raw: r.stdout.trim(), ref };
     },
     async setMeta(workspaceRef, meta) {

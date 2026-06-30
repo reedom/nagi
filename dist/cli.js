@@ -3,7 +3,7 @@ import {
   createNagi,
   loadDotenv,
   logger
-} from "./chunk-FJWWUZLP.js";
+} from "./chunk-BNXKF3SC.js";
 import {
   investigateTicket,
   researchEntry,
