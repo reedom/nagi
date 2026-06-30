@@ -75,11 +75,12 @@ function isSelfReport(toolName, toolInput, nagiInstance) {
     return tokens[1] === nagiInstance;
   return tokens[0] === nagiInstance;
 }
-function decisionJson(behavior, _reason) {
+function decisionJson(behavior, reason) {
+  const decision = behavior === "deny" ? { behavior, message: reason } : { behavior };
   return JSON.stringify({
     hookSpecificOutput: {
       hookEventName: "PermissionRequest",
-      decision: { behavior }
+      decision
     }
   });
 }

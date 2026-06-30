@@ -389,7 +389,10 @@ function createWorkflowApi(deps) {
     if (deps.onLog)
       deps.onLog(currentPhase ? `[${currentPhase}] ${message}` : message);
   }
-  return { agent, parallel, pipeline, phase, log, budget: deps.budget, args: deps.args };
+  async function setSurfaceMeta(meta) {
+    await Promise.all(Object.values(deps.adapters).filter((a) => typeof a.setMeta === "function").map((a) => Promise.resolve().then(() => a.setMeta(meta))));
+  }
+  return { agent, parallel, pipeline, phase, log, budget: deps.budget, args: deps.args, setSurfaceMeta };
 }
 
 // node_modules/.pnpm/ai-workflow-engine@file+..+ai-workflow-engine/node_modules/ai-workflow-engine/dist/runtime/budget.js
@@ -729,6 +732,9 @@ function makeSurfaceAdapter(deps) {
   const nagiInstance = deps.nagiInstance ?? "nagi";
   const runsDir = deps.runsDir ?? join5(homedir2(), ".agent-surface-adapters", "runs");
   const id = deps.id ?? deps.host.id;
+  let workspaceRef;
+  let pendingMeta = {};
+  const useWorkspaceModel = typeof deps.host.createWorkspace === "function" && typeof deps.host.addSurface === "function";
   return {
     // schema: structured output is supported via prompt delivery + Stop-hook validation
     // (not a native CLI flag), so the consumer can rely on result.data when it declares one.
@@ -769,7 +775,19 @@ ${schemaDirective(spec.schema)}` : agentbusDirective(runId, nagiInstance);
       });
       const scriptPath = join5(runDir, "launch.sh");
       writeFileSync3(scriptPath, launcherScript(deps.agent.bin, args));
-      const surface = await deps.host.launch({ cwd: spec.cwd, command: `bash ${shellQuote(scriptPath)}` });
+      let surface;
+      if (useWorkspaceModel) {
+        if (workspaceRef === void 0) {
+          const ws = await deps.host.createWorkspace({ cwd: spec.cwd, command: `bash ${shellQuote(scriptPath)}`, meta: pendingMeta });
+          workspaceRef = ws.workspace.ref;
+          pendingMeta = {};
+          surface = ws.surface;
+        } else {
+          surface = await deps.host.addSurface({ workspaceRef, cwd: spec.cwd, command: `bash ${shellQuote(scriptPath)}` });
+        }
+      } else {
+        surface = await deps.host.launch({ cwd: spec.cwd, command: `bash ${shellQuote(scriptPath)}` });
+      }
       deps.onSurface?.(surface);
       const result = await deps.awaitResult(runId);
       if (result.error !== void 0)
@@ -782,6 +800,18 @@ ${schemaDirective(spec.schema)}` : agentbusDirective(runId, nagiInstance);
         usage,
         sessionId
       };
+    },
+    async setMeta(meta) {
+      if (!useWorkspaceModel)
+        return;
+      if (workspaceRef === void 0) {
+        pendingMeta = { ...pendingMeta, ...meta };
+        return;
+      }
+      if (!deps.host.setMeta) {
+        throw new Error(`host '${deps.host.id}' does not support live setMeta on an existing workspace`);
+      }
+      await deps.host.setMeta(workspaceRef, meta);
     }
   };
 }
@@ -803,6 +833,22 @@ function makeCmuxHost(opts = {}) {
     if (r.code !== 0)
       throw new Error(`cmux ${verb} failed: ${r.stderr.trim().slice(0, 300)}`);
   };
+  const parseRef = (stdout, kind) => {
+    const ordinal = stdout.match(new RegExp(`${kind}:\\d+`));
+    if (ordinal)
+      return ordinal[0];
+    try {
+      const j = JSON.parse(stdout);
+      const v = j[`${kind}_id`] ?? j[kind] ?? j.id;
+      if (typeof v === "string")
+        return v;
+    } catch (err) {
+      if (!(err instanceof SyntaxError))
+        throw err;
+    }
+    const uuid = stdout.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
+    return uuid ? uuid[0] : void 0;
+  };
   return {
     id: "cmux",
     async launch(input) {
@@ -821,9 +867,51 @@ function makeCmuxHost(opts = {}) {
         const j = JSON.parse(r.stdout);
         const found = j.surface ?? j.workspace ?? j.id;
         ref = typeof found === "string" ? found : void 0;
-      } catch {
+      } catch (err) {
+        if (!(err instanceof SyntaxError))
+          throw err;
       }
       return { raw: r.stdout.trim(), ref };
+    },
+    async createWorkspace({ cwd, command, meta }) {
+      const args = globalArgs();
+      args.push("new-workspace");
+      if (meta?.name)
+        args.push("--name", meta.name);
+      if (meta?.description)
+        args.push("--description", meta.description);
+      if (cwd)
+        args.push("--cwd", cwd);
+      args.push("--command", command, "--json");
+      if (opts.window)
+        args.push("--window", opts.window);
+      const r = await run(bin, args);
+      if (r.code !== 0)
+        throw new Error(`cmux new-workspace failed: ${r.stderr.trim().slice(0, 300)}`);
+      const wsRef = parseRef(r.stdout, "workspace");
+      if (!wsRef)
+        throw new Error(`cmux new-workspace: could not parse a workspace ref from: ${r.stdout.trim().slice(0, 200)}`);
+      return { workspace: { raw: r.stdout.trim(), ref: wsRef }, surface: { raw: r.stdout.trim(), ref: wsRef } };
+    },
+    async addSurface({ workspaceRef, cwd, command }) {
+      const args = globalArgs();
+      args.push("new-surface", "--workspace", workspaceRef);
+      if (cwd)
+        args.push("--cwd", cwd);
+      args.push("--command", command, "--focus", "true", "--json");
+      const r = await run(bin, args);
+      if (r.code !== 0)
+        throw new Error(`cmux new-surface failed: ${r.stderr.trim().slice(0, 300)}`);
+      const ref = parseRef(r.stdout, "surface");
+      if (!ref)
+        throw new Error(`cmux new-surface: could not parse a surface ref from: ${r.stdout.trim().slice(0, 200)}`);
+      return { raw: r.stdout.trim(), ref };
+    },
+    async setMeta(workspaceRef, meta) {
+      if (meta.name)
+        await runOrThrow("rename-workspace", ["rename-workspace", "--workspace", workspaceRef, "--", meta.name]);
+      if (meta.description)
+        await runOrThrow("workspace-action", ["workspace-action", "--action", "set-description", "--workspace", workspaceRef, "--description", meta.description]);
     },
     // Drive a resident REPL: type text, then submit/control with a key.
     async send(surfaceRef, text) {
