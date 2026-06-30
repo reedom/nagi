@@ -2,7 +2,7 @@ import {
   createNagi,
   loadConfig,
   parseConfig
-} from "./chunk-FJWWUZLP.js";
+} from "./chunk-BNXKF3SC.js";
 import "./chunk-MXPDRPU6.js";
 import "./chunk-ZO2TLVOL.js";
 export {
